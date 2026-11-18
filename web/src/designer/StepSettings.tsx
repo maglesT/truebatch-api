@@ -6,6 +6,7 @@ import { findBlock, type Block } from '../../../shared/blocks/index.js';
 import { stepTitle } from '../../../shared/engine/batch.js';
 import type { Stored, Value } from '../../../shared/engine/index.js';
 import type { Kind } from '../../../shared/templates/index.js';
+import { lineKind } from '../../../shared/master/kinds.js';
 import { HEADER_VALUES, materialLines, type Limit, type MasterDoc, type SettingValue, type Step } from '../../../shared/master/schema.js';
 import { usedFields, verdictless, workedExample } from './example.js';
 import { earlierRefs, HEADER_LABEL, kindOfUnit, neededKind, unitLabel, unitsOf } from './model.js';
@@ -236,9 +237,10 @@ function QuantitySource({ doc, si, ti, label, kind, value, onChange, missing, ty
       <select aria-label={label} value={code} onChange={(e) => pick(e.target.value)}>
         <option value="">({label.toLowerCase()}: choose)</option>
         <option value="type">a value I type</option>
-        {fits('mass') && doc.formula.length > 0 && (
+        {/* A line whose batch quantity is of this kind: kg for a mass, L for a volume (a liquid charged in litres). */}
+        {doc.formula.some((l) => fits(lineKind(l))) && (
           <optgroup label="Formula: batch quantity">
-            {doc.formula.flatMap((l) => [
+            {doc.formula.filter((l) => fits(lineKind(l))).flatMap((l) => [
               <option key={`f${l.key}`} value={`f:${l.key}`}>{l.name}</option>,
               ...(l.adjust ? [<option key={`fa${l.key}`} value={`fa:${l.key}`}>{l.name}, adjusted for the lot</option>] : []),
             ])}

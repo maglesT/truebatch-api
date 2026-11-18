@@ -5,7 +5,15 @@
  */
 import { refsIn, type Block } from '../blocks/format.js';
 import { findUnit, type Kind } from '../templates/index.js';
-import type { Step } from './schema.js';
+import type { FormulaLine, Step } from './schema.js';
+
+/** The unit a formula line is counted in on its steps: L/kg in L, kg/kg or equivalents in kg (or in L when so given). */
+export const lineUnit = (l: Pick<FormulaLine, 'unit'>): string => (l.unit === 'L/kg' ? 'L' : !l.unit || l.unit === 'kg/kg' ? 'kg' : l.unit);
+/** The steps that count a formula line in a unit of their own: the packing material issue and the printed reconciliation. */
+export const UNIT_STEPS = ['pack-material-issue', 'printed-reconciliation'];
+
+/** The kind of a formula line's batch quantity: kg (or kg/kg, or equivalents without a unit) a mass, L or L/kg a volume, units a count. */
+export const lineKind = (l: Pick<FormulaLine, 'unit'>): Kind | undefined => findUnit(lineUnit(l))?.kind;
 
 export const kindOfUnit = (symbol: string | undefined): Kind | undefined => (symbol === undefined ? undefined : findUnit(symbol)?.kind);
 

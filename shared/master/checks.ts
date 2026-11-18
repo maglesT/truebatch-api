@@ -7,7 +7,7 @@ import { findBlock, type Block } from '../blocks/index.js';
 import { Dec, c1WithinLimits, findUnit, t11SaltFactor } from '../templates/index.js';
 import { evaluate, keyInput, lineQuantity, molarTheoretical } from '../engine/values.js';
 import { materialLines, type Answer, type Limit, type MasterDoc, type SettingValue } from './schema.js';
-import { neededKind, unitKindProblem, what as kindWords } from './kinds.js';
+import { lineKind, lineUnit, UNIT_STEPS, neededKind, unitKindProblem, what as kindWords } from './kinds.js';
 import { isBalance } from '../engine/picks.js';
 
 /** A warning the author answers: one of the options, with a reason when `needsReason`. */
@@ -74,6 +74,9 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       if (st.critical && st.flow.kind === 'optional-with-reason') error(`${p}.flow`, 'A critical step cannot be optional');
       if (st.waitForCheck && !st.checker) warn(p, 'The next step waits for a check this step does not have');
       for (const bs of block.settings) if (!bs.optional && st.settings[bs.name] === undefined) error(`${p}.settings.${bs.name}`, `${bs.label} is not set`);
+      // Tablets round 32 (TB-P4): a packing material's steps count in its unit; a unit changed afterwards left them in the old one.
+      const counted = UNIT_STEPS.includes(st.block.id) && typeof st.settings.unit === 'string' && doc.formula.find((l) => l.key === (st.settings.material as { formula?: string } | undefined)?.formula);
+      if (counted && lineUnit(counted) !== st.settings.unit) error(`${p}.settings.unit`, `${counted.name} is counted in ${lineUnit(counted)} in the formula, but this step in ${String(st.settings.unit)}: make them the same`, 'TB-P4');
       for (const [name, v] of Object.entries(st.settings)) {
         const bs = block.settings.find((x) => x.name === name);
         const listed = !bs?.options || (typeof v === 'string' && bs.options.includes(v));
@@ -254,7 +257,7 @@ function settingProblem(doc: MasterDoc, si: number, ti: number, block: Block, bs
     if (!line) return `No formula line ${v.formula}`;
     // A formula line gives its batch quantity in its own unit (kg, L, or a count; per kg of the key input or by
     // equivalents in kg or L): a setting of another known kind never takes it (Tablets round 31, where a line is a mass).
-    const has = findUnit(line.unit === 'L/kg' ? 'L' : !line.unit || line.unit === 'kg/kg' ? 'kg' : line.unit)?.kind;
+    const has = lineKind(line);
     const need = kind === 'quantity' ? neededKind(block, bs.name, settings) : undefined;
     return need && has && need !== has ? `${bs.label}: a formula line gives its batch quantity (${kindWords(has)}), but this step needs ${kindWords(need)}: type the value` : null;
   }

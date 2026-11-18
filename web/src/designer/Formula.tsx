@@ -5,7 +5,8 @@ import { useState } from 'react';
 import type { MasterData, MasterRow } from '../api-designer.js';
 import type { Problem } from '../../../shared/master/checks.js';
 import { keyInput, lineQuantity } from '../../../shared/engine/index.js';
-import { ROLES, type FormulaLine, type MasterDoc } from '../../../shared/master/schema.js';
+import { ROLES, type FormulaLine, type MasterDoc, type Step } from '../../../shared/master/schema.js';
+import { lineUnit, UNIT_STEPS } from '../../../shared/master/kinds.js';
 import { AnswerBox, type OnAnswer } from './CheckPanel.js';
 import { move, newKey, qtyText } from './model.js';
 import { Decimal, Order, Picker } from './ui.js';
@@ -20,6 +21,13 @@ function withHow(l: FormulaLine, how: string): FormulaLine {
   const n = l.eq ?? l.quantity ?? '';
   if (how === 'eq' || how === 'eq L') return { ...rest, eq: n, ...(how === 'eq L' ? { unit: 'L' as const } : {}) };
   return { ...rest, quantity: n, unit: how as FormulaLine['unit'] };
+}
+
+/** Tablets round 32: a line's packing material issue and reconciliation steps take its new unit (their quantities are in it). */
+function withLineUnit(doc: MasterDoc, key: string): MasterDoc {
+  const l = doc.formula.find((x) => x.key === key)!;
+  const mine = (t: Step) => UNIT_STEPS.includes(t.block.id) && (t.settings.material as { formula?: string } | undefined)?.formula === key;
+  return { ...doc, stages: doc.stages.map((s) => ({ ...s, steps: s.steps.map((t) => (mine(t) ? { ...t, settings: { ...t.settings, unit: lineUnit(l) } } : t)) })) };
 }
 
 export function FormulaTable({ doc, onChange, md, masters, selected, onSelect, problems, onAnswer }: {
@@ -54,7 +62,7 @@ export function FormulaTable({ doc, onChange, md, masters, selected, onSelect, p
                     <td><select aria-label={`Role of ${l.name}`} value={l.role} onChange={(e) => put(i, { ...l, role: e.target.value as FormulaLine['role'] })}>
                       {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></td>
                     <td className="nowrap"><Decimal label={`Quantity of ${l.name}`} value={l.eq ?? l.quantity} onChange={(v) => put(i, l.eq !== undefined ? { ...l, eq: v } : { ...l, quantity: v })} />
-                      <select aria-label={`Unit of ${l.name}`} value={how} onChange={(e) => put(i, withHow(l, e.target.value))}>
+                      <select aria-label={`Unit of ${l.name}`} value={how} onChange={(e) => onChange(withLineUnit({ ...doc, formula: lines.map((x, j) => (j === i ? withHow(l, e.target.value) : x)) }, l.key))}>
                         {HOW.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>
                       {!['kg', 'L', 'units'].includes(how) && <span className="cell-sub">{key ? `of ${key.name}` : 'the stage has no key input'}</span>}</td>
                     <td><Decimal label={`Molecular weight of ${l.name}`} placeholder="—" value={l.mw} onChange={(v) => put(i, opt(l, 'mw', v))} /></td>
