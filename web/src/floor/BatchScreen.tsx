@@ -10,6 +10,7 @@ import { StepScreen } from './StepScreen.js';
 import { DemoSkip } from './DemoSkip.js';
 import { Terminate, terminatedText } from '../release/Terminate.js';
 import { deviationText } from '../../../shared/engine/release.js';
+import { plantDate } from '../../../shared/plant-time.js';
 import './floor.css';
 
 // One batch on the floor: its header, the stages as a progress bar and the alerts, then the overview, one step, or
@@ -62,6 +63,7 @@ export function BatchHeader({ d }: { d: BatchDetail }) {
           <span>Product <b>{h.productCode}</b></span>
           {<span>Batch size <b>{h.batchSize} kg of API</b></span>}
           <span>Master version <b>{d.master.versionNo}</b></span>
+          {d.batch.retestOn && <span>Retest date <b>{plantDate(d.batch.retestOn)}</b></span>}
           <span>Issued <b>{plainClock(d.batch.issuedAt)}</b></span>
         </div>
       </div>

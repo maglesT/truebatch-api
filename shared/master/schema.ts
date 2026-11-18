@@ -111,6 +111,9 @@ export const lineSchema = z.object({
   mw: decimal.optional(),
   // kg/L: a liquid charged by volume.
   density: decimal.optional(),
+  // TA-24: a solvent the master allows to be charged recovered too: the recovered material of master data (its own
+  // code, tested and released in MMS); the step takes a lot of either, and solvent sent to recovery becomes a lot of it.
+  recovered: z.object({ materialItemId: z.string().min(1).max(100), code: text(), name: text() }).strict().optional(),
   // Settings of the adjustment templates, applied in this order: T11 salt factor, T9 potency or T18 content, T16 overage.
   adjust: z.object({
     // `factor`: the salt factor as written; only checked against the molecular weights, never used.
@@ -140,6 +143,9 @@ export const headerSchema = z.object({
   mw: decimal.optional(),
   // TA-27: the retest date is the date of manufacture + this period, never typed.
   retestMonths: z.number().int().min(1).max(120),
+  // A master of one step of a route whose intermediate goes to stores (plan question 2): its lot is an intermediate
+  // lot in output_lot_v1, not an API lot.
+  intermediate: z.boolean().optional(),
   // TA-11: the rooms of master data (codes) where the materials are weighed.
   dispensingRooms: z.array(text()).max(20).optional(),
 }).strict();

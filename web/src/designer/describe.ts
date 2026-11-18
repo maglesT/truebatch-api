@@ -76,10 +76,11 @@ export function describeMaster(doc: MasterDoc, units?: Units): Section[] {
       { key: 'product', text: `API ${h.productCode}, ${h.productName}${h.mw ? `; molecular weight as isolated ${h.mw} g/mol` : ''}.` },
       { key: 'batch', text: `Batch size ${h.batchSize} kg of API expected.` },
       { key: 'retest', text: `Retest period ${h.retestMonths} months from the date of manufacture.` },
+      ...(h.intermediate ? [{ key: 'intermediate', text: 'Makes an intermediate that goes to stores.' }] : []),
       ...(h.dispensingRooms?.length ? [{ key: 'dispensing', text: `Weighed in the dispensing rooms ${h.dispensingRooms.join(', ')}.` }] : []),
     ] },
     { key: 'formula', title: 'Formula', lines: doc.formula.map((l) => ({ key: l.key,
-      text: `${l.name} (${l.code}), ${l.role} in ${doc.stages.find((s) => s.key === l.stage)?.name ?? l.stage}: ${formulaText(l)}${l.mw ? `; MW ${l.mw} g/mol` : ''}${l.density ? `; density ${l.density} kg/L` : ''}${adjustText(l)}.` })) },
+      text: `${l.name} (${l.code}), ${l.role} in ${doc.stages.find((s) => s.key === l.stage)?.name ?? l.stage}: ${formulaText(l)}${l.mw ? `; MW ${l.mw} g/mol` : ''}${l.density ? `; density ${l.density} kg/L` : ''}${l.recovered ? `; may be charged recovered: ${l.recovered.name} (${l.recovered.code})` : ''}${adjustText(l)}.` })) },
   ];
   return [
     ...top,

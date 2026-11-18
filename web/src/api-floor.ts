@@ -30,7 +30,9 @@ export interface BatchDetail {
   batch: { id: number; batchNo: string; issuedAt: string; status: string; open: string[]; late: string[]; deviations: Deviation[]; yieldOut: string[]; contentHash: string; actions: string[]; deviationsLink: string;
     terminated: { personName: string; at: string; payload: { reason?: string; returns?: Returned[] } } | null;
     // What the batch has used of each lot (signed steps), as published to MMS: terminating asks what went back to stores.
-    issued: Returned[] };
+    issued: Returned[];
+    // TA-27: the date of manufacture and the retest date worked out from it, once the first step started.
+    manufacturedOn?: string; retestOn?: string };
   master: { id: number; versionNo: number; doc: MasterDoc };
   stages: StageRow[]; timers: TimerRow[]; steps: StepRow[];
 }

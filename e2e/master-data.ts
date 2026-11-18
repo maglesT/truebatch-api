@@ -9,6 +9,7 @@ export function seedMasterData(m: FakeMaster) {
     { ...item('mat-ksm', 'MAT-001', 'Examplol acid'), category: 'starting material', unit: 'kg' },
     { ...item('mat-tol', 'MAT-005', 'Toluene'), category: 'solvent', unit: 'L' },
     { ...item('mat-lbl', 'PM-101', 'Drum label'), category: 'packing material', unit: 'nos' },
+    { ...item('mat-drm', 'PM-201', 'Fibre drum 25 kg with liner'), category: 'packing material', unit: 'nos' },
   );
   m.equipment_.push(
     { ...item('eq-bal', 'BAL-01', 'Balance 300 kg'), kind: 'instrument', type: 'balance', room: 'DSP-01' },

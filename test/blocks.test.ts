@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { findBlock } from '../shared/blocks/index.js';
 import { blockProblems } from '../shared/blocks/format.js';
-import { doneProblems, evaluate, openSteps, parseKey, type StepEvent, type Value } from '../shared/engine/index.js';
+import { doneProblems, evaluate, materialUses, openSteps, parseKey, type StepEvent, type Value } from '../shared/engine/index.js';
 import { readValue } from '../shared/engine/values.js';
 import { masterChecks } from '../shared/master/checks.js';
 import type { MasterDoc } from '../shared/master/schema.js';
@@ -22,12 +22,22 @@ const NEW: [string, Record<string, unknown>, object?][] = [
   ['charge', { material: { formula: 'x' } }],
   ['mix', {}],
   ['react', reaction, { everyMinutes: 60, flow: { kind: 'repeat-until', maxRounds: 10 } }],
+  ['charge-liquid', { target: { formula: 'x' }, unit: 'kg', tolerance: '1.0' }],
+  ['separate', { keptLayer: 'lower' }, { minMinutes: 30 }],
+  ['distil', { temperatureLimit: { low: '40', high: '60', unit: '°C' }, volumeLimit: { high: '200', unit: 'L' } }, { everyMinutes: 30, flow: { kind: 'repeat-until', maxRounds: 40 } }],
+  ['distil-dry', { temperatureLimit: { low: '40', high: '60', unit: '°C' } }, { everyMinutes: 30, flow: { kind: 'repeat-until', maxRounds: 40 } }],
+  ['filter-keep', {}],
+  ['column', { eluent: { formula: 'x' }, resultUnit: '%', resultLimit: { low: '95', unit: '%' } }, { flow: { kind: 'repeat-until', maxRounds: 50 } }],
+  ['isolate', { washTarget: '50 L', tolerance: '5' }, { flow: { kind: 'repeat-until', maxRounds: 20 } }],
   ['dry', { lodLimit: { high: '0.5', unit: '%' } }, { flow: { kind: 'repeat-until', maxRounds: 10 } }],
   ['sieve', {}],
   ['sub-batch-combine', { accountabilityLimit: pct('99.0', '100.5') }],
   ['sieve-analysis', { sieve1: '850 µm', sieve2: '425 µm', sieve3: '250 µm', sieve4: '180 µm', sieve5: '150 µm', finesBelow: '150 µm', finesLimit: { high: '20.0', unit: '%' } }],
   ['qa-sample', { sampleLimit: { low: '50', high: '60', unit: 'g' } }, { flow: { kind: 'qa-hold' } }],
+  ['container-issue', { material: { formula: 'x' }, expected: '4 units' }],
   ['pack-material-issue', { material: { formula: 'x' }, unit: 'units' }],
+  ['container-fill', { nominal: '25.0 kg', tolerance: '0.5' }, { flow: { kind: 'repeat-until', maxRounds: 50 } }],
+  ['container-return', { material: { formula: 'x' } }],
   ['printed-reconciliation', { material: { formula: 'x' }, unit: 'units', issued: '100 units' }],
   ['destruction', {}],
 ];
@@ -40,7 +50,8 @@ const using = (id: string, settings: object, options: object = {}): MasterDoc =>
 describe('the API blocks', () => {
   it.each(NEW)('the %s block is a valid description, and a small master using it passes the master check', (id, settings, options) => {
     expect(blockProblems(findBlock({ id, version: 1 })!)).toEqual([]);
-    expect(checks(using(id, settings, options)).map((p) => `${p.path}: ${p.message}`)).toEqual([]);
+    // A packing step alone is not a Pack and label stage (TA-26, tested in master-checks.test.ts).
+    expect(checks(using(id, settings, options)).filter((p) => p.rule !== 'TA-26').map((p) => `${p.path}: ${p.message}`)).toEqual([]);
   });
 
   it('an overage may be set on any line (T16): 100 kg with 10 % is 110 kg', () => {
@@ -88,5 +99,27 @@ describe('the engine runs the new blocks like any other', () => {
     expect(state(doc, r1, '0.1.1.1')).toBe('waiting');
     const r2 = walk(doc, r1, '0.1.0.2', { ...base, endPointSeen: 'yes' });
     expect(state(doc, r2, '0.1.1.1')).toBe('open');
+  });
+
+  it('TA-26 containers filled in rounds until the last: the net of each within ± tolerance of the nominal fill', () => {
+    const doc = using('container-fill', { nominal: '25.0 kg', tolerance: '0.5' }, { flow: { kind: 'repeat-until', maxRounds: 50 } });
+    const bal = { itemId: 'b', code: 'BAL-01', name: 'Balance', version: 1, type: 'balance', room: 'RM-1', area: 'Area' };
+    const drum = (gross: string, last: string) => ({ balance: bal, tare: { value: '2.10', unit: 'kg' }, gross: { value: gross, unit: 'kg' }, seal: 'S-1', labelChecked: 'yes', lastContainer: last });
+    const r1 = walk(doc, [], '0.1.0.1', drum('27.10', 'no'));
+    expect(openSteps(doc, r1, at(10_000)).steps.find((x) => x.id === '0.1.0.1')!.results.net).toMatchObject({ ok: true, value: '25' });
+    expect(state(doc, r1, '0.1.0.2')).toBe('open');
+    const r2 = walk(doc, r1, '0.1.0.2', drum('27.05', 'yes'));
+    expect(state(doc, r2, '0.1.0.3')).toBe('absent');
+    expect(state(doc, r2, '0.1.1.1')).toBe('open');
+  });
+
+  it('TA-26 containers issued count as used less what was counted back at the end (material_use_v1)', () => {
+    const doc = small([{ role: 'Packing operator', steps: [
+      { key: 'issue', block: { id: 'container-issue', version: 1 }, checker: true, settings: { material: { formula: 'x' }, expected: '4 units' } },
+      { key: 'back', block: { id: 'container-return', version: 1 }, checker: true, settings: { material: { formula: 'x' } } }, yieldStep] }]);
+    const e1 = walk(doc, [], '0.1.0.1', { lot: 'DRUM-1', issued: { value: '5', unit: 'units' } });
+    expect(materialUses(doc, openSteps(doc, e1, at(10_000)).steps).map((u) => u.quantity)).toEqual([{ value: '5', unit: 'units' }]);
+    const e2 = walk(doc, e1, '0.1.1.1', { returned: { value: '1', unit: 'units' } });
+    expect(materialUses(doc, openSteps(doc, e2, at(10_000)).steps).map((u) => u.quantity)).toEqual([{ value: '4', unit: 'units' }]);
   });
 });

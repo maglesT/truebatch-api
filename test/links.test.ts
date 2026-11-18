@@ -60,7 +60,9 @@ beforeAll(async () => {
         ('API-EXP', 'material', 'mat-ksm', 'MAT-001', 'approved', '2020-01-31', null, 'QC-19-001'),
         ('API-RT', 'material', 'mat-ksm', 'MAT-001', 'approved', '2099-01-31', '2021-06-30', 'QC-20-001'),
         ('API-ASIS', 'material', 'mat-ksm', 'MAT-001', 'approved', '2099-01-31', null, 'QC-26-102'),
-        ('LAC-1', 'material', 'mat-amn', 'MAT-002', 'approved', '2099-01-31', null, 'QC-26-103');
+        ('LAC-1', 'material', 'mat-amn', 'MAT-002', 'approved', '2099-01-31', null, 'QC-26-103'),
+        ('TOL-1', 'material', 'mat-tol', 'MAT-005', 'approved', '2099-01-31', null, 'QC-26-104'),
+        ('TOLR-1', 'material', 'mat-tolr', 'MAT-005R', 'approved', '2099-01-31', '2027-05-31', 'QC-26-105');
       update ${S.mms}.lot_v1 set stock = 25, unit = 'kg' where lot_number = 'API-OK';
       insert into ${S.mms}.lot_test_v1 (lot_number, report_ref, test, result, value, unit, basis) values
         ('API-OK', 'QC-26-101', 'Assay', '99.1 %', 99.1, '%', 'dried'), ('API-OK', 'QC-26-101', 'LOD', '0.4 %', 0.4, '%', 'as is'),
@@ -71,7 +73,7 @@ beforeAll(async () => {
   t.master.materials_.push({ ...item('prd-1', 'API-001', 'Examplone hydrochloride'), category: 'API', unit: 'kg' },
     { ...item('p', 'P', 'P'), category: 'API', unit: 'kg' });
   for (const l of api().formula) t.master.materials_.push({ ...item(l.materialItemId, l.code, l.name), category: null, unit: 'kg' });
-  t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' });
+  t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' }, { ...item('mat-tolr', 'MAT-005R', 'Toluene, recovered'), category: 'solvent', unit: 'L' });
   t.master.equipment_.push(...['', '2', '3', '4', '5'].map((n) => ({ ...item(`eq-str${n}`, `STR-0${n || 1}`, 'Stirrer'), kind: 'equipment' as const, type: 'stirrer', room: 'GRN-01' })),
     { ...item('eq-bal', 'BAL-01', 'Balance 60 kg'), kind: 'instrument', type: 'balance', room: 'DSP-01' },
     { ...item('eq-rmg', 'RCT-01', 'Reactor'), kind: 'equipment', type: 'reactor', room: 'GRN-01' });
@@ -304,6 +306,19 @@ describe('TA-12 MMS: only released, in-date lots of the material; certificate va
     expect(await problems(record(b.id, '0.1.0.1', { water: '1.0' }))).toEqual(['Water content (certificate) comes from MMS with the lot and cannot be typed']);
   });
 
+  it('TA-24 a solvent line that allows its recovered material takes a released lot of either; another material is refused naming both', async () => {
+    const doc = small([{ steps: [{ key: 'tol', block: { id: 'charge-liquid', version: 1 }, checker: true, settings: { target: { formula: 'tol' }, unit: 'L', tolerance: '1.0' } }, yieldStep] }]);
+    doc.formula = [{ key: 'tol', materialItemId: 'mat-tol', code: 'MAT-005', name: 'Toluene', stage: 's0', role: 'solvent', quantity: '400', unit: 'L',
+      recovered: { materialItemId: 'mat-tolr', code: 'MAT-005R', name: 'Toluene, recovered' } }];
+    const c = await issue(doc);
+    await act('asha', c.id, '0.1.0.1', 'start');
+    expect((await record(c.id, '0.1.0.1', { lot: 'TOL-1' })).statusCode).toBe(200);
+    expect((await record(c.id, '0.1.0.1', { lot: 'TOLR-1' })).statusCode).toBe(200);
+    // The recovered lot's retest date is kept with the step (TA-25 reads it for a blend's lots).
+    expect((await stepOf(c.id, '0.1.0.1')).values).toMatchObject({ lot: 'TOLR-1', 'lot.expiry': '2027-05-31' });
+    expect(await problems(record(c.id, '0.1.0.1', { lot: 'LAC-1' }))).toContain('Lot LAC-1 is MAT-002 in MMS, not MAT-005 Toluene or MAT-005R Toluene, recovered.');
+  });
+
   it('the pick list offers the lots of the material MMS has released and in date', async () => {
     const r = (await as('asha', 'GET', '/api/mms/lots?material=mat-ksm')).json() as { link: string; lots: { lotNumber: string }[] };
     expect(r).toMatchObject({ link: 'ok' });
@@ -526,6 +541,10 @@ describe('the views TrueBatch publishes', () => {
       'started_at timestamp with time zone', 'ended_at timestamp with time zone', 'read_at timestamp with time zone', 'data_as_of timestamp with time zone', 'step_name text']);
     expect(await columns('deviation_note_v1')).toEqual(['note_id bigint', 'source_ref text', 'batch_number text', 'product_code text', 'step text', 'note text',
       'reference text', 'status text', 'noted_at timestamp with time zone', 'read_at timestamp with time zone', 'data_as_of timestamp with time zone']);
+    // The lots that go to stores (plan section 6), for MMS.
+    expect(await columns('output_lot_v1')).toEqual(['lot_number text', 'kind text', 'material_code text', 'material_master_id text', 'quantity numeric', 'unit text',
+      'containers integer', 'manufactured_on date', 'retest_on date', 'released boolean', 'released_at timestamp with time zone', 'batch_number text',
+      'read_at timestamp with time zone', 'data_as_of timestamp with time zone']);
   });
 
   it('the Logbook\'s and Deviations\' own queries read TrueBatch batches, the equipment they used and the notes', async () => {
@@ -568,32 +587,86 @@ describe('the views TrueBatch publishes', () => {
     expect(rows).toEqual([{ batch_number: 'MFG-NOT-STARTED', issued: '2026-10-30', manufactured_on: null }, { batch_number: 'MFG-STARTED', issued: '2026-10-30', manufactured_on: '2026-11-03' }]);
   });
 
-  it('batch_fact_v1 gives the batch\'s output (for OEE and packing): the good tablets and the yield of its tablet reconciliation, once that step is done; null before', async () => {
+  it('batch_fact_v1 gives the batch\'s output (for OEE and MMS): the net kg packed and the yield of its last stage yield (Pack and label), once that step is done; null before', async () => {
     const [u] = await t.owner<{ id: number }[]>`select id::int from users order by id limit 1`;
-    // Only what the view reads of a master: a stage yield, then the tablet reconciliation (the batch's).
-    const doc = { header: { productCode: 'OUT', productName: 'Output' }, stages: [{ key: 'c', steps: [{ key: 'y', block: { id: 'stage-yield', version: 1 } },
-      { key: 'r', block: { id: 'tablet-reconciliation', version: 1 } }] }] };
+    // Only what the view reads of a master: a stage yield of the process, then the stage yield of Pack and label (the batch's).
+    const doc = { header: { productCode: 'OUT', productName: 'Output', retestMonths: 24 }, stages: [{ key: 'c', steps: [{ key: 'y', block: { id: 'stage-yield', version: 1 } }] },
+      { key: 'pack', steps: [{ key: 'y', block: { id: 'stage-yield', version: 1 } }] }] };
     const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(doc as never)}, ${u!.id}) returning id::int`;
     const [b] = await t.owner<{ id: number }[]>`insert into batches (batch_no, master_version_id, issued_by) values ('OUT-1', ${v!.id}, ${u!.id}) returning id::int`;
-    const res = (good: string, y: string) => ({ results: { goodTablets: { ok: true, value: good, unit: 'tablets', shown: '' }, yield: { ok: true, value: y, unit: '%', shown: '' },
-      accountability: { ok: false, message: 'not yet' } } });
+    const rec = (kg: string, y: string) => ({ values: { output: { value: kg, unit: 'kg' } }, results: { yield: { ok: true, value: y, unit: '%', shown: '' }, accountability: { ok: false, message: 'not yet' } } });
+    const add = (stage: number, kind: string, payload: object) => t.owner`insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id)
+      values (${b!.id}, ${stage}, 1, 0, 1, ${kind}, ${t.owner.json(payload as never)}, ${u!.id})`;
+    const out = async () => (await t.owner.unsafe(`select good_quantity::text, good_unit, yield_percent::text from ${rep()}.batch_fact_v1 where batch_number = 'OUT-1'`))[0];
+    await add(0, 'value', rec('101.0', '99'));
+    await add(0, 'done', {});
+    await add(1, 'value', rec('99.4504', '99.382716'));
+    // Recorded but not signed: not yet the batch's output.
+    expect(await out()).toEqual({ good_quantity: null, good_unit: 'kg', yield_percent: null });
+    await add(1, 'done', {});
+    expect(await out()).toEqual({ good_quantity: '99.450', good_unit: 'kg', yield_percent: '99.38' });
+    // Sent back: null again until signed again; a correction after that gives the corrected figures.
+    await add(1, 'sent_back', { reason: 'reweigh' });
+    expect((await out())!.good_quantity).toBeNull();
+    await add(1, 'value', rec('98.5', '98.5'));
+    await add(1, 'done', {});
+    await add(1, 'corrected', rec('98.75', '98.75'));
+    expect(await out()).toEqual({ good_quantity: '98.750', good_unit: 'kg', yield_percent: '98.75' });
+  });
+
+  it('material_use_v1 gives MMS the liquids charged and the containers issued less those counted back at the end', async () => {
+    const [u] = await t.owner<{ id: number }[]>`select id::int from users order by id limit 1`;
+    const doc = { header: { productCode: 'USE-9', productName: 'Use test' },
+      formula: [{ key: 'tol', materialItemId: 'mat-tol', code: 'MAT-005', name: 'Toluene' }, { key: 'drum', materialItemId: 'mat-drm', code: 'PM-201', name: 'Drum' }],
+      stages: [{ key: 's', name: 'Step 1', steps: [{ key: 'tol', block: { id: 'charge-liquid', version: 1 }, settings: { target: { formula: 'tol' } } },
+        { key: 'drums', block: { id: 'container-issue', version: 1 }, settings: { material: { formula: 'drum' } } },
+        { key: 'back', block: { id: 'container-return', version: 1 }, settings: { material: { formula: 'drum' } } }] }] };
+    const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(doc as never)}, ${u!.id}) returning id::int`;
+    const [b] = await t.owner<{ id: number }[]>`insert into batches (batch_no, master_version_id, issued_by) values ('USE-9', ${v!.id}, ${u!.id}) returning id::int`;
     const add = (step: number, kind: string, payload: object) => t.owner`insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id)
       values (${b!.id}, 0, 1, ${step}, 1, ${kind}, ${t.owner.json(payload as never)}, ${u!.id})`;
-    const out = async () => (await t.owner.unsafe(`select good_quantity::text, good_unit, yield_percent::text from ${rep()}.batch_fact_v1 where batch_number = 'OUT-1'`))[0];
-    await add(0, 'value', { results: { yield: { ok: true, value: '99', unit: '%', shown: '' } } });
+    const rows = async () => t.owner.unsafe(`select lot_number, material_code, quantity::text, unit from ${rep()}.material_use_v1 where batch_number = 'USE-9' order by lot_number`);
+    await add(0, 'value', { values: { lot: 'TOL-1', charged: { value: '400', unit: 'L' } } });
     await add(0, 'done', {});
-    await add(1, 'value', res('198765.4', '99.382716'));
-    // Recorded but not signed: not yet the batch's output.
-    expect(await out()).toEqual({ good_quantity: null, good_unit: 'tablets', yield_percent: null });
+    await add(1, 'value', { values: { lot: 'DRM-1', issued: { value: '5', unit: 'units' } } });
     await add(1, 'done', {});
-    expect(await out()).toEqual({ good_quantity: '198765', good_unit: 'tablets', yield_percent: '99.38' });
-    // Sent back: null again until signed again; a correction after that gives the corrected figures.
-    await add(1, 'sent_back', { reason: 'recount' });
-    expect((await out())!.good_quantity).toBeNull();
-    await add(1, 'value', res('197000', '98.5'));
-    await add(1, 'done', {});
-    await add(1, 'corrected', res('197500', '98.75'));
-    expect(await out()).toEqual({ good_quantity: '197500', good_unit: 'tablets', yield_percent: '98.75' });
+    expect(await rows()).toEqual([{ lot_number: 'DRM-1', material_code: 'PM-201', quantity: '5', unit: 'units' }, { lot_number: 'TOL-1', material_code: 'MAT-005', quantity: '400', unit: 'L' }]);
+    // One drum counted back: recorded, then signed done.
+    await add(2, 'value', { values: { returned: { value: '1', unit: 'units' } } });
+    expect((await rows())[0]).toMatchObject({ quantity: '5' });
+    await add(2, 'done', {});
+    expect((await rows())[0]).toMatchObject({ quantity: '4' });
+  });
+
+  it('TA-25 output_lot_v1 (with TA-24, TA-27): the API lot (net kg and containers filled, retest date worked out, released by QA), a recovered-solvent lot at once', async () => {
+    const [u] = await t.owner<{ id: number }[]>`select id::int from users order by id limit 1`;
+    const doc = { header: { productCode: 'API-9', productItemId: 'mat-api9', productName: 'Lot test API', retestMonths: 36 },
+      formula: [{ key: 'tol', materialItemId: 'mat-tol', code: 'MAT-005', name: 'Toluene', recovered: { materialItemId: 'mat-tolr', code: 'MAT-005R', name: 'Toluene, recovered' } },
+        { key: 'old', materialItemId: 'mat-api9', code: 'API-9', name: 'Lot test API' }],
+      stages: [{ key: 'step', steps: [{ key: 'distil', block: { id: 'distil', version: 1 }, settings: { solvent: { formula: 'tol' } } },
+        { key: 'weigh', block: { id: 'weigh', version: 1 }, settings: { target: { formula: 'old' } } }] },
+      { key: 'pack', steps: [{ key: 'fill', block: { id: 'container-fill', version: 1 } }] }] };
+    const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(doc as never)}, ${u!.id}) returning id::int`;
+    const [b] = await t.owner<{ id: number }[]>`insert into batches (batch_no, master_version_id, issued_by) values ('LOT-1', ${v!.id}, ${u!.id}) returning id::int`;
+    const add = (stage: number, step: number, round: number, kind: string, payload: object, at = '2026-11-18 06:00+00') => t.owner`
+      insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id, at) values (${b!.id}, ${stage}, 1, ${step}, ${round}, ${kind}, ${t.owner.json(payload as never)}, ${u!.id}, ${at})`;
+    const lots = async () => t.owner.unsafe(`select lot_number, kind, material_code, quantity::text, unit, containers, manufactured_on::text, retest_on::text, released
+      from ${rep()}.output_lot_v1 where batch_number = 'LOT-1' order by lot_number`);
+    await add(0, 0, 1, 'started', {}, '2026-11-17 20:00+00');
+    // 120 L of toluene to recovery in 6 drums: a lot of the recovered toluene at once (MMS tests it).
+    await add(0, 0, 1, 'value', { values: { toRecovery: { value: '120', unit: 'L' }, recoveryContainers: { value: '6', unit: 'units' } } });
+    await add(0, 0, 1, 'done', {});
+    for (const [round, net] of [[1, '25.010'], [2, '24.980']] as const) {
+      await add(1, 0, round, 'value', { values: {}, results: { net: { ok: true, value: net, unit: 'kg', shown: '' } } });
+      await add(1, 0, round, 'done', {});
+    }
+    // Manufactured 18 Nov 2026 (plant time) + 36 months: retest by the end of October 2029.
+    expect(await lots()).toEqual([
+      { lot_number: 'LOT-1', kind: 'api', material_code: 'API-9', quantity: '49.990', unit: 'kg', containers: 2, manufactured_on: '2026-11-18', retest_on: '2029-10-31', released: false },
+      { lot_number: 'LOT-1-R1', kind: 'recovered solvent', material_code: 'MAT-005R', quantity: '120', unit: 'L', containers: 6, manufactured_on: '2026-11-18', retest_on: null, released: false }]);
+    // TA-25: a lot of the API itself in the batch (a blend) whose retest date comes first: the blend's is not later.
+    await add(0, 1, 1, 'value', { values: { lot: 'API9-OLD', 'lot.expiry': '2028-03-31' } });
+    expect((await lots())[0]).toMatchObject({ retest_on: '2028-03-31' });
   });
 
   it('batch_fact_v1 names the product and gives the master version as its number', async () => {

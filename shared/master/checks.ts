@@ -114,7 +114,27 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       }
     });
   });
+  packChecks(doc, error);
   return out.map((p) => ({ ...p, message: plainWords(p.message) }));
+}
+
+/**
+ * TA-26 (owner, 18 Nov 2026: Pack and label is the last stage of the record): a master that packs fills and labels the
+ * containers in its last stage; every label issued is reconciled from its own issue; batch-coded leftovers are destroyed.
+ */
+function packChecks(doc: MasterDoc, error: (path: string, message: string, rule?: string) => void): void {
+  const last = doc.stages.at(-1);
+  const PACK = ['container-issue', 'pack-material-issue', 'container-fill'];
+  if (!last || !doc.stages.some((s) => s.steps.some((t) => PACK.includes(t.block.id)))) return;
+  const at = doc.stages.length - 1;
+  const of = (id: string) => last.steps.filter((t) => t.block.id === id);
+  const material = (t: { settings: Record<string, SettingValue> }) => { const v = t.settings.material; return typeof v === 'object' && 'formula' in v ? v.formula : undefined; };
+  if (!of('container-fill').length) error(`stages[${at}]`, `The last stage, ${last.name}, fills and labels the containers: it needs the Fill and label a container step (Pack and label)`, 'TA-26');
+  for (const issue of of('pack-material-issue')) {
+    const m = material(issue);
+    if (m && !of('printed-reconciliation').some((r) => material(r) === m)) error(`stages[${at}]`, `The labels ${doc.formula.find((l) => l.key === m)?.name ?? m} issued in ${last.name} have no reconciliation step`, 'TA-26');
+  }
+  if (of('pack-material-issue').length && !of('destruction').length) error(`stages[${at}]`, `${last.name} issues labels: batch-coded leftovers need the destruction step`, 'TA-26');
 }
 
 /**

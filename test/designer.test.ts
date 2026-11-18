@@ -76,17 +76,24 @@ describe('master designer', () => {
     for (const s of SKELETON_LIST) {
       const doc = masterSchema.parse({ header, formula: [], stages: skeletonStages(s.id, header) });
       expect(doc.stages.every((st) => st.steps.every((t) => findBlock(t.block)) && st.steps[0]!.block.id === 'line-clearance')).toBe(true);
-      expect(masterChecks(doc).every((p) => /not set|not checked|no materials|choose the rooms/.test(p.message)), s.id).toBe(true);
-      // Pack and label is the last stage of every skeleton (owner, 18 Nov 2026).
+      expect(masterChecks(doc).filter((p) => !/not set|not checked|no materials|choose the rooms|no key input/.test(p.message)), s.id).toEqual([]);
+      // Pack and label is the last stage of every skeleton (owner, 18 Nov 2026), with the drums filled one by one.
       expect(doc.stages.at(-1)!.name).toBe('Pack and label');
+      expect(doc.stages.at(-1)!.steps.map((t) => t.block.id)).toEqual(['line-clearance', 'container-issue', 'pack-material-issue', 'container-fill', 'qa-sample', 'qa-sample',
+        'container-return', 'printed-reconciliation', 'destruction', 'stage-yield']);
     }
     // TA-11: a master that weighs names its dispensing rooms; a new one starts with none (the author picks them).
     const bare = masterSchema.parse({ header: { ...header, dispensingRooms: undefined }, formula: [], stages: skeletonStages(SKELETON_LIST[0]!.id, header) });
     expect(masterChecks(bare).filter((p) => p.path === 'header.dispensingRooms')).toEqual([{ level: 'error', path: 'header.dispensingRooms', rule: 'TA-11',
       message: 'The master weighs but names no dispensing rooms: choose them in the header (rooms of master data)' }]);
     const blend = skeletonStages('blending', header);
-    expect(blend.map((s) => s.steps.map((t) => t.block.id).join(' '))).toEqual(['line-clearance weigh charge mix qa-sample stage-yield',
-      'line-clearance pack-material-issue qa-sample qa-sample printed-reconciliation destruction stage-yield']);
+    expect(blend[0]!.steps.map((t) => t.block.id).join(' ')).toBe('line-clearance weigh charge mix qa-sample stage-yield');
+    // Three steps: each makes its intermediate, used by the next; the reactions and distillations read at intervals.
+    const three = skeletonStages('three-step', header);
+    expect(three.map((s) => [s.key, s.uses.join(), s.produces?.name ?? ''])).toEqual([['step1', '', 'intermediate 1'], ['step2', 'step1', 'intermediate 2'],
+      ['step3', 'step2', 'API, unpacked'], ['pack', '', '']]);
+    expect(three[0]!.steps.find((t) => t.key === 'react')).toMatchObject({ everyMinutes: 60, flow: { kind: 'repeat-until', maxRounds: 50 } });
+    expect(three[2]!.steps.find((t) => t.key === 'yield')!.settings.theoretical).toEqual({ molar: true });
     expect(blend[1]!.steps.at(-1)!.settings.theoretical).toEqual({ ref: 'blending/yield/output' });
     expect(blend[1]!.steps.find((t) => t.key === 'label-reconciliation')!.settings.issued).toEqual({ ref: 'pack/labels/issued' });
   });

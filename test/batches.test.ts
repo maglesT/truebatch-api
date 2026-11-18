@@ -287,6 +287,15 @@ describe('walking a stage', () => {
     expect([after.inputChanged, after.results.target.value]).toEqual([[], s.results.target.value]);
   });
 
+  it('TA-27 the retest date is worked out from the date of manufacture and the retest period, never typed: on the batch screen and the record', async () => {
+    const b = (await as('viewer', 'GET', `/api/batches/${id}`)).json() as { batch: { manufacturedOn: string; retestOn: string } };
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const [y, m] = today.split('-').map(Number) as [number, number];
+    // 36 months: to the end of the month before (as T27).
+    expect(b.batch).toMatchObject({ manufacturedOn: today, retestOn: new Date(Date.UTC(y, m - 1 + 36, 0)).toISOString().slice(0, 10) });
+    expect(await recordText(id)).toMatch(/Retest \| manufactured \d{1,2} \w{3} 20\d\d; retest date \d{1,2} \w{3} 20\d\d \(36 months\)/);
+  });
+
   it('TA-22 the batch record PDF shows the corrected value struck through with its reason, the worked lines, limits, notes and who did what', async () => {
     const text = await recordText(id);
     expect(text).toMatch(/^TrueBatch API · Batch record TA\d{6} · API-001 Examplone hydrochloride/);

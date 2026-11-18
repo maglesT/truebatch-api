@@ -15,7 +15,7 @@ import { blocking, masterChecks } from '../../shared/master/checks.js';
 import type { MasterDoc } from '../../shared/master/schema.js';
 import { Dec } from '../../shared/templates/index.js';
 import {
-  ACTIONS, BATCH_ACTIONS, CERTIFICATE, DEVIATION_DONE, LINK_OF, MATERIAL_USE, batchRefusal, filedKey, inLotUnit, issuedLots, returnProblems, returnsOf, usedQuantity, usesOfLot, stepLabel, stepPlace, stepTitle, handFields, isHand, batchView, doneProblems, evaluate, lateItems, openSteps, parseKey, readValue, refusal, review, timers,
+  ACTIONS, BATCH_ACTIONS, CERTIFICATE, retestDate, DEVIATION_DONE, LINK_OF, MATERIAL_USE, batchRefusal, filedKey, inLotUnit, issuedLots, returnProblems, returnsOf, usedQuantity, usesOfLot, stepLabel, stepPlace, stepTitle, handFields, isHand, batchView, doneProblems, evaluate, lateItems, openSteps, parseKey, readValue, refusal, review, timers,
   trainingCheck, trainingTyped, type Training,
   type Action, type BatchAction, type BatchEvent, type DeviationStatus, type LinkState, type Source, type StageView, type Stored, type StepEvent, type StepKey, type StepView, type Timer, type Value,
 } from '../../shared/engine/index.js';
@@ -299,6 +299,14 @@ async function recordClosedStages(tx: Tx, id: number, before: readonly StageView
   }
 }
 
+/** TA-27: the batch's date of manufacture (plant time of its first started step) and retest date. */
+function retest(l: LoadedBatch, steps: StepView[]): { manufacturedOn?: string; retestOn?: string } {
+  const started = l.events.filter((e) => e.kind === 'started').map((e) => e.at).sort((a, b) => a.getTime() - b.getTime())[0];
+  const mfg = started?.toLocaleDateString('en-CA', { timeZone: PLANT_TZ });
+  const on = retestDate(l.doc, steps, mfg);
+  return mfg && on ? { manufacturedOn: mfg, retestOn: on } : {};
+}
+
 export function batchRoutes(app: FastifyInstance, sql: Sql) {
   const anyUser = { preHandler: requirePermission() };
 
@@ -405,7 +413,9 @@ export function batchRoutes(app: FastifyInstance, sql: Sql) {
       batch: { ...l.batch, ...bv, deviationsLink: dv.link, contentHash: batchHash(l), actions: BATCH_NAMES.filter((a) => a !== 'close-deviation' && !batchRefusal(a, bv, req.user!)),
         terminated: l.batchEvents.find((e) => e.payload.terminated) ?? null,
         // What the batch has used of each lot: what terminating it asks about (the quantities that went back to stores).
-        issued: issuedLots(l.doc, steps) },
+        issued: issuedLots(l.doc, steps),
+        // TA-27: the date of manufacture and the retest date worked out from it (none before the first step starts).
+        ...retest(l, steps) },
       // The server time: the screens count timers down on the server clock.
       now: l.now, master: { id: v!.id, masterId: v!.masterId, versionNo: v!.versionNo, doc: l.doc }, stages, timers: decided ? [] : timers(l.doc, l.events, l.now),
       steps: steps.map((s) => {

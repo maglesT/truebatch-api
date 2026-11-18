@@ -12,7 +12,30 @@ and size), not the Batchwright way.
   radiopharmaceuticals, sterile APIs after the sterilisation point, clinical-trial APIs, continuous flow.
 - **A copy of the TrueBatch Tablets engine, no new mechanism.** The API's differences are data: new blocks (data
   files), one new template (T28 molar quantity), the batch header in kg, the formula per stage and one more published
-  view (`output_lot_v1`). The sections below are those of TrueBatch Tablets until phase C replaces the tablet parts.
+  view (`output_lot_v1`). The sections below "Platform" are those of TrueBatch Tablets; where they speak of tablets,
+  read the API parts here.
+
+## TrueBatch API (phase C, 18 Nov 2026)
+- **Master.** The header names the API as a material of master data (so MMS can stock its lots), the API expected per
+  batch in kg, its molecular weight as isolated, the retest period, and whether it is an intermediate for stores. Each
+  formula line is charged in one stage, per batch (kg, L, units), per kg of the stage's key input, or by molar
+  equivalents of it (T28); the key input is the stage's starting material, or the intermediate of the stage it uses,
+  taken as weighed or yielded once recorded. A solvent line may allow its recovered material (TA-24): the step then
+  takes a released lot of either.
+- **Blocks** (data files, `shared/blocks/`): the Tablets blocks weigh, charge, mix, dry, dry-constant, sieve,
+  sieve-analysis, sub-batch-combine, check, qa-sample (in g), stage-yield, line-clearance, pack-material-issue,
+  printed-reconciliation, destruction; new: charge-liquid, react, separate, distil and distil-dry, isolate and
+  filter-keep, column, container-issue and container-return, container-fill. A variant whose required fields differ is
+  its own block (owner, 18 Nov 2026), as dry and dry-constant.
+- **Pack and label** is the last stage of a master that packs (TA-26, master check): drums and labels issued, each drum
+  filled and labelled (one round per drum), labels reconciled, leftovers destroyed.
+- **Retest date** (TA-27): the end of the month before the date of manufacture + the retest period, never typed;
+  never later than the date of a lot of the API itself used in the batch (a blend, TA-25). On the batch screen, the
+  record and `output_lot_v1`.
+- **Views**: `batch_fact_v1` gives the net kg packed (`good_quantity`, `good_unit` kg) and its yield from the last stage
+  yield; `material_use_v1` counts weighings, liquids charged and containers and labels issued less those counted back;
+  `output_lot_v1` lists the API (or intermediate) lot of each batch with its net kg, containers, dates and QA release,
+  and a recovered-solvent lot for each solvent sent to recovery. Published ids use the prefix `truebatch_api:`.
 
 ## Platform
 - Runs on the Medhanta platform. Core provides people, sign-in, permissions, e-signature re-authentication and master

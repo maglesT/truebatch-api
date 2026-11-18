@@ -35,7 +35,8 @@ async function withMasterData(master: Master, doc: MasterDoc): Promise<MasterDoc
     header: { ...doc.header, productCode: product.code, productName: product.name },
     formula: doc.formula.map((l) => {
       const m = usableItem(materials, l.materialItemId, 'material');
-      return { ...l, code: m.code, name: m.name };
+      const r = l.recovered && usableItem(materials, l.recovered.materialItemId, 'material');
+      return { ...l, code: m.code, name: m.name, ...(r ? { recovered: { materialItemId: r.itemId, code: r.code, name: r.name } } : {}) };
     }),
   };
 }
