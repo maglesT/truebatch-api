@@ -20,6 +20,8 @@ const answered = (change: Change, key: string, choice: string): Change => (d) =>
 describe('calculation checks ⚠️ from the formulation test', () => {
   const sizeTest = (limit: object): Change => (d) => { step(d, 'drying', 'qa-hold').settings = { what: 'API lot d90 (certificate)', unit: 'µm', limit: limit as never }; };
   it.each<[string, Change, Change, string, string, string]>([
+    ['M8 an ICH Q3C Class 1 solvent (benzene) needs a reason and a residual-solvent test (API template test)',
+      (d) => { d.formula[4]!.name = 'Benzene'; }, () => {}, 'class-1/toluene', 'formula[4]', 'needed, tested'],
     ['F0204 a solvent-wet starting material weighed without a solvent correction',
       (d) => { Object.assign(d.formula[0]!, { name: 'Examplol acid wet cake', adjust: { potency: { basis: 'as is', standardIs: 'anhydrous' } } }); },
       (d) => { d.formula[0]!.name = 'Examplol acid wet cake'; }, 'solvent-wet/ksm', 'formula[0]', 'weighed dry'],
