@@ -7,7 +7,7 @@ import { findBlock, type Block } from '../blocks/index.js';
 import { Dec, c1WithinLimits, findUnit, t11SaltFactor } from '../templates/index.js';
 import { evaluate, keyInput, lineQuantity, molarTheoretical } from '../engine/values.js';
 import { materialLines, type Answer, type Limit, type MasterDoc, type SettingValue } from './schema.js';
-import { unitKindProblem } from './kinds.js';
+import { neededKind, unitKindProblem, what as kindWords } from './kinds.js';
 import { isBalance } from '../engine/picks.js';
 
 /** A warning the author answers: one of the options, with a reason when `needsReason`. */
@@ -77,7 +77,7 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       for (const [name, v] of Object.entries(st.settings)) {
         const bs = block.settings.find((x) => x.name === name);
         const listed = !bs?.options || (typeof v === 'string' && bs.options.includes(v));
-        const why = !bs ? `The block ${block.name} has no setting ${name}` : listed ? settingProblem(doc, si, ti, bs.kind, v) : `${bs.label}: choose one of ${bs.options!.join(', ')}`;
+        const why = !bs ? `The block ${block.name} has no setting ${name}` : listed ? settingProblem(doc, si, ti, block, bs, st.settings, v) : `${bs.label}: choose one of ${bs.options!.join(', ')}`;
         if (why) error(`${p}.settings.${name}`, why);
         // TA-01: a limit (or a typed target) in a unit of another kind than the value it checks.
         const unit = typeof v === 'object' && 'unit' in v ? v.unit : typeof v === 'string' && bs?.kind === 'quantity' ? QUANTITY.exec(v)?.[3] : undefined;
@@ -227,7 +227,14 @@ function calculationChecks(doc: MasterDoc, out: Problem[]): void {
 }
 
 /** Whether a step setting fits its kind, and a reference points at something earlier that exists. */
-function settingProblem(doc: MasterDoc, si: number, ti: number, kind: Block['settings'][number]['kind'], v: SettingValue): string | null {
+function settingProblem(doc: MasterDoc, si: number, ti: number, block: Block, bs: Block['settings'][number], settings: Record<string, SettingValue>, v: SettingValue): string | null {
+  const kind = bs.kind;
+  // A tolerance (notBatch, Tablets round 31) is typed: a formula line's batch quantity of some kilograms as the largest
+  // change between rounds of drying would let every round pass as "no further change".
+  if (bs.notBatch === 'tolerance' && typeof v === 'object' && !('unit' in v)) {
+    const what = 'formula' in v ? `the batch quantity of ${doc.formula.find((l) => l.key === v.formula)?.name ?? v.formula}` : 'header' in v ? 'the batch size' : 'ref' in v ? `${v.ref} (an earlier step)` : 'the molar theoretical yield';
+    return `${bs.label} is a tolerance: type it (${what} is not a tolerance)`;
+  }
   if (typeof v === 'string') {
     if (kind === 'number') return DECIMAL.test(v) ? null : `"${v}" is not a plain decimal`;
     if (kind === 'quantity') {
@@ -243,7 +250,13 @@ function settingProblem(doc: MasterDoc, si: number, ti: number, kind: Block['set
   }
   if ('formula' in v) {
     if (kind !== 'material' && kind !== 'quantity') return `A formula line is given where a ${kind} is wanted`;
-    return materialLines(doc).some((l) => l.key === v.formula) ? null : `No formula line ${v.formula}`;
+    const line = materialLines(doc).find((l) => l.key === v.formula);
+    if (!line) return `No formula line ${v.formula}`;
+    // A formula line gives its batch quantity in its own unit (kg, L, or a count; per kg of the key input or by
+    // equivalents in kg or L): a setting of another known kind never takes it (Tablets round 31, where a line is a mass).
+    const has = findUnit(line.unit === 'L/kg' ? 'L' : !line.unit || line.unit === 'kg/kg' ? 'kg' : line.unit)?.kind;
+    const need = kind === 'quantity' ? neededKind(block, bs.name, settings) : undefined;
+    return need && has && need !== has ? `${bs.label}: a formula line gives its batch quantity (${kindWords(has)}), but this step needs ${kindWords(need)}: type the value` : null;
   }
   if ('header' in v) return kind === 'quantity' ? null : `A header value is given where a ${kind} is wanted`;
   if ('molar' in v) {

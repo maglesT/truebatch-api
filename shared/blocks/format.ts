@@ -42,6 +42,9 @@ export const settingSchema = z.object({
   // text: the fixed list the master picks from.
   options: z.array(z.string().min(1)).optional(),
   optional: z.boolean().optional(),
+  // quantity: 'tolerance', a small difference (the largest change between rounds of drying to constant weight): typed
+  // only, so never a formula line (its batch quantity), the batch size or an earlier step (checks.ts; Tablets round 31).
+  notBatch: z.enum(['tolerance']).optional(),
 }).strict();
 
 export const calcSchema = z.object({
@@ -106,6 +109,7 @@ export function blockProblems(b: Block): string[] {
     if (f.kind === 'choice' && !f.options?.length) p.push(`field ${f.name}: a choice needs options`);
   }
   for (const s of b.settings) if (s.options && (s.kind !== 'text' || !s.options.length)) p.push(`setting ${s.name}: only a text setting has a list`);
+  for (const s of b.settings) if (s.notBatch && s.kind !== 'quantity') p.push(`setting ${s.name}: only a quantity setting is marked not a batch quantity`);
   const known = new Set([...b.fields.map((f) => f.name), ...b.settings.map((s) => s.name)]);
   // "$prev.name" reads the previous round, so it may name any calculation of the block, this one included (a running
   // total over rounds), as the engine reads it (port from TrueBatch Oral Liquids).
