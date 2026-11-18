@@ -10,7 +10,7 @@ import type { Stored, Value } from './values.js';
 import type { StepView } from './batch.js';
 
 // The blocks whose material the other products read as used (material_use_v1 of both products).
-export const MATERIAL_USE = ['weigh', 'charge-liquid', 'pack-material-issue'];
+export const MATERIAL_USE = ['weigh', 'charge-liquid', 'pack-material-issue', 'container-issue'];
 
 type Q = { value: string; unit: string };
 const isQ = (v: Value | undefined): v is Q => typeof v === 'object' && !Array.isArray(v) && 'value' in v && 'unit' in v;
@@ -18,9 +18,11 @@ const material = (st: Step) => { const m = st.settings.material; return typeof m
 const done = (v: StepView) => v.events.some((e) => e.kind === 'done');
 
 /**
- * The quantity a step takes from its lot: the net weight of a weighing (when worked out), or the quantity of a packing
- * material issued less what its reconciliation returned to stores uncoded, once that reconciliation is signed done
- * (destroyed and batch-coded material is used, not returned). `steps`: the batch's steps, for the reconciliation.
+ * The quantity a step takes from its lot: the net weight of a weighing (when worked out); the quantity of a liquid
+ * charged; or the count or quantity issued less what went back to stores unused: of containers, their count back
+ * (container-return, of the same material, once signed done), never below 0; of a packing material, what its
+ * reconciliation returned to stores uncoded, once that reconciliation is signed done (destroyed and batch-coded
+ * material is used, not returned). `steps`: the batch's steps, for the step that counts back.
  */
 export function usedQuantity(doc: MasterDoc, st: Step, values: Record<string, Value>, results: Record<string, Stored>, steps: readonly StepView[]): Q | null {
   if (st.block.id === 'weigh') {
@@ -28,16 +30,20 @@ export function usedQuantity(doc: MasterDoc, st: Step, values: Record<string, Va
     return net?.ok ? { value: net.value, unit: net.unit } : null;
   }
   if (st.block.id === 'charge-liquid') return isQ(values.charged) ? values.charged : null;
-  if (st.block.id !== 'pack-material-issue') return null;
+  const back = BACK[st.block.id];
   const issued = values.issued;
-  if (!isQ(issued)) return null;
+  if (!back || !isQ(issued)) return null;
   const rec = steps.find((v) => {
     const r = doc.stages[v.key.stage]?.steps[v.key.step];
-    return r?.block.id === 'printed-reconciliation' && material(r) === material(st) && done(v);
+    return r?.block.id === back && material(r) === material(st) && done(v);
   });
   const returned = rec?.values.returned;
-  return isQ(returned) && returned.unit === issued.unit ? { value: new Dec(issued.value).minus(returned.value).toString(), unit: issued.unit } : issued;
+  if (!isQ(returned) || returned.unit !== issued.unit) return issued;
+  const left = new Dec(issued.value).minus(returned.value);
+  return { value: (st.block.id === 'container-issue' ? Dec.max(0, left) : left).toString(), unit: issued.unit };
 }
+// The step that counts back what an issue step issued (its field "returned").
+const BACK: Record<string, string> = { 'container-issue': 'container-return', 'pack-material-issue': 'printed-reconciliation' };
 
 // The count names material_use_v1 publishes a count in when master data names one (db/migrations/0011).
 const COUNT = ['nos', 'no', 'nos.', 'no.', 'units', 'unit', 'pcs', 'pc', 'pieces', 'each', 'ea', 'numbers'];
