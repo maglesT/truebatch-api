@@ -66,12 +66,22 @@ export async function pullLot(app: FastifyInstance, doc: MasterDoc, st: Step, bl
   const line = lineOf(doc, st);
   const today = plantDay(now, tz);
   const problems: string[] = [];
-  if (line && l.materialMasterId !== line.materialItemId) problems.push(`Lot ${lot} is ${l.materialCode ?? 'another material'} in MMS, not ${line.code} ${line.name}.`);
+  // TA-24: a lot of the line's material, or of the recovered material the master allows on it.
+  const allowed = line ? [line.materialItemId, ...(line.recovered ? [line.recovered.materialItemId] : [])] : [];
+  if (line && !allowed.includes(l.materialMasterId ?? '')) problems.push(`Lot ${lot} is ${l.materialCode ?? 'another material'} in MMS, not ${line.code} ${line.name}${line.recovered ? ` or ${line.recovered.code} ${line.recovered.name}` : ''}.`);
   if (!LOT_USABLE.includes(l.status)) problems.push(`Lot ${lot} is ${LOT_WORDS[l.status] ?? l.status.replaceAll('_', ' ')} in MMS: only a released lot may be used.`);
   if (l.expiryDate && l.expiryDate < today) problems.push(`Lot ${lot} expired on ${plantDate(l.expiryDate)}.`);
   if (l.retestDate && l.retestDate < today) problems.push(`Lot ${lot} is past its retest date ${plantDate(l.retestDate)}.`);
   const source: Source = { from: 'mms', asOf: l.dataAsOf, shown: `MMS lot ${lot}: ${l.status}, expiry ${l.expiryDate ?? '—'}, retest ${l.retestDate ?? '—'}, QC report ${l.qcReportRef ?? '—'}` };
   const out: Pulled = { source, values: {}, sources: {}, problems };
+  // The lot's date that comes first (retest or expiry), kept with the step as a lot typed by hand keeps its label's:
+  // a blend's retest date is never later than that of the API lots in it (TA-25).
+  const until = [l.retestDate, l.expiryDate].filter((d): d is string => !!d).sort()[0];
+  if (until && block.fields.some((f) => f.kind === 'lot')) {
+    const f = block.fields.find((x) => x.kind === 'lot')!;
+    out.values[`${f.name}.expiry`] = until;
+    out.sources[`${f.name}.expiry`] = source;
+  }
   for (const [name, test] of Object.entries(CERTIFICATE)) {
     const f = block.fields.find((x) => x.name === name);
     if (!f) continue;

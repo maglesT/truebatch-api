@@ -141,3 +141,26 @@ export function inLotUnit(q: Q, lotUnit: string): Dec | null {
   if (!from || !to || from[0] !== to[0]) return null;
   return new Dec(q.value).times(new Dec(10).pow(from[1] - to[1]));
 }
+
+/**
+ * TA-27: the retest date, worked out, never typed: the end of the month before the date of manufacture + the master's
+ * retest period (as T27's "month before"); TA-25: never later than the date (retest or expiry, whichever first) of a lot
+ * of the API itself used in the batch, a blend's or a reprocessing's. The date of manufacture is the plant-time date the
+ * batch's first step started; none before. As output_lot_v1 (db/migrations/0018).
+ */
+export function retestDate(doc: MasterDoc, steps: readonly StepView[], manufactured: string | undefined): string | undefined {
+  if (!manufactured) return undefined;
+  const [y, m] = manufactured.split('-').map(Number) as [number, number];
+  const end = new Date(Date.UTC(y, m - 1 + doc.header.retestMonths, 0)).toISOString().slice(0, 10);
+  const apiLots = steps.flatMap((v) => {
+    const st = doc.stages[v.key.stage]?.steps[v.key.step];
+    const line = st && lineOf(doc, st);
+    const until = v.values['lot.expiry'];
+    return line?.materialItemId === doc.header.productItemId && typeof until === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(until) ? [until] : [];
+  });
+  return [end, ...apiLots].sort()[0];
+}
+const lineOf = (doc: MasterDoc, st: Step) => {
+  const k = Object.values(st.settings).find((x): x is { formula: string } => typeof x === 'object' && x !== null && 'formula' in x);
+  return k && doc.formula.find((l) => l.key === k.formula);
+};

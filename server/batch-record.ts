@@ -4,10 +4,10 @@
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces.js';
 import { findBlock, type Block } from '../shared/blocks/index.js';
 import { materialLines, type Step } from '../shared/master/schema.js';
-import { formulaText, batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, trainingOf, trainingText, trainingTyped, skillText, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
+import { formulaText, retestDate, batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, trainingOf, trainingText, trainingTyped, skillText, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
 import type { LoadedBatch } from './routes/batches.js';
 import { pageFrame, plant, runs } from './pdf.js';
-import { plantText } from '../shared/plant-time.js';
+import { PLANT_TZ, plantDate, plantText } from '../shared/plant-time.js';
 
 // A signature of the batch; `step` is the step instance of a step signature.
 export interface Signature { objectType: string; objectId: number; printedName: string; meaning: string; signedAt: Date; step: string | null }
@@ -55,6 +55,10 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
   const h = doc.header;
   const view = batchView(doc, events, batchEvents, now, r.deviationsRead);
   const { steps } = openSteps(doc, events, now);
+  // TA-27: the date of manufacture (the plant-time date the first step started) and the retest date worked out from it.
+  const started = events.filter((e) => e.kind === 'started').map((e) => e.at).sort((a, b) => a.getTime() - b.getTime())[0];
+  const mfg = started?.toLocaleDateString('en-CA', { timeZone: PLANT_TZ });
+  const retest = retestDate(doc, steps, mfg);
   const names = new Map(events.map((e) => [e.person, e.personName]));
   const who = (id: number | null) => (id === null ? 'server' : names.get(id) ?? `person ${id}`);
   const sigOf = new Map(r.signatures.filter((s) => s.objectType === 'step_event').map((s) => [s.objectId, s]));
@@ -83,7 +87,7 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
     { text: runs(`${h.productCode} · ${h.productName}`), fontSize: 11, margin: [0, 2, 0, 8] },
     { table: { widths: [90, '*', 90, '*', 90, '*'], body: [
       [th('Product'), small(`${h.productCode} · ${h.productName}`), th('Batch no.'), small(r.batch.batchNo, { bold: true }), th('Status'), small(statusWords(view.status, true), { bold: true })],
-      [th('Batch size'), small(`${h.batchSize} kg of API expected`), th('Retest period'), small(`${h.retestMonths} months from the date of manufacture`), th('Master version'), small(`version ${r.versionNo}`)],
+      [th('Batch size'), small(`${h.batchSize} kg of API expected`), th('Retest'), small(mfg && retest ? `manufactured ${plantDate(mfg)}; retest date ${plantDate(retest)} (${h.retestMonths} months)` : `${h.retestMonths} months from the date of manufacture`), th('Master version'), small(`version ${r.versionNo}`)],
       [th('Issued'), small(`${r.issuedByName}, ${plant(r.batch.issuedAt)}`), th('Times'), small('plant time (IST)'), th('Changed values'), small('marked CHANGED; the original is struck through, with the reason', { color: RED })],
     ] }, layout: 'lightHorizontalLines' },
     ...(endedText ? [small(endedText, { bold: true, color: RED, margin: [0, 6, 0, 0] })] : []),

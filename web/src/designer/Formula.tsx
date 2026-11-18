@@ -82,7 +82,7 @@ export function FormulaTable({ doc, onChange, md, masters, selected, onSelect, p
           </div>
         ) : <div className="row"><button type="button" onClick={() => setAdding(true)}>+ Add a material</button></div>}
       </div>
-      {sel && selected !== undefined && <AdjustPanel line={sel} onChange={(l) => put(selected, l)} problems={problems.filter((p) => p.path.startsWith(`formula[${selected}]`))} onAnswer={onAnswer} />}
+      {sel && selected !== undefined && <AdjustPanel line={sel} md={md} onChange={(l) => put(selected, l)} problems={problems.filter((p) => p.path.startsWith(`formula[${selected}]`))} onAnswer={onAnswer} />}
     </>
   );
 }
@@ -94,7 +94,7 @@ function adjustSummary(a: Adjust | undefined): string {
 }
 
 /** The "Adjustment" panel: the settings of the dispensing templates (T11, T9 or T18, T16), in this order. */
-function AdjustPanel({ line, onChange, problems, onAnswer }: { line: FormulaLine; onChange: (l: FormulaLine) => void; problems: Problem[]; onAnswer?: OnAnswer }) {
+function AdjustPanel({ line, md, onChange, problems, onAnswer }: { line: FormulaLine; md: MasterData; onChange: (l: FormulaLine) => void; problems: Problem[]; onAnswer?: OnAnswer }) {
   const a: Adjust = line.adjust ?? {};
   const put = (next: Adjust) => {
     const clean = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && !(Array.isArray(v) && !v.length))) as Adjust;
@@ -165,6 +165,21 @@ function AdjustPanel({ line, onChange, problems, onAnswer }: { line: FormulaLine
           </fieldset>
         </>
       ) : null}
+      {/* TA-24: a solvent the master allows to be charged recovered too (its own material, tested and released in MMS). */}
+      {line.role === 'solvent' && (
+        <fieldset className="checklist">
+          <legend>Recovered solvent</legend>
+          <label>Recovered material allowed on this line (a lot of either may be charged)
+            <select aria-label={`Recovered material of ${line.name}`} value={line.recovered?.materialItemId ?? ''} onChange={(e) => {
+              const m = md.materials.find((x) => x.itemId === e.target.value);
+              const { recovered: _, ...rest } = line;
+              onChange(m ? { ...rest, recovered: { materialItemId: m.itemId, code: m.code, name: m.name } } : rest);
+            }}>
+              <option value="">(none: fresh solvent only)</option>
+              {md.materials.filter((m) => m.active && m.itemId !== line.materialItemId).map((m) => <option key={m.itemId} value={m.itemId}>{m.code} {m.name}</option>)}
+            </select></label>
+        </fieldset>
+      )}
       {/* An overage on any line (T16). */}
       <fieldset className="checklist">
         <legend>Overage</legend>

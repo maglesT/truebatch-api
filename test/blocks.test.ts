@@ -50,7 +50,8 @@ const using = (id: string, settings: object, options: object = {}): MasterDoc =>
 describe('the API blocks', () => {
   it.each(NEW)('the %s block is a valid description, and a small master using it passes the master check', (id, settings, options) => {
     expect(blockProblems(findBlock({ id, version: 1 })!)).toEqual([]);
-    expect(checks(using(id, settings, options)).map((p) => `${p.path}: ${p.message}`)).toEqual([]);
+    // A packing step alone is not a Pack and label stage (TA-26, tested in master-checks.test.ts).
+    expect(checks(using(id, settings, options)).filter((p) => p.rule !== 'TA-26').map((p) => `${p.path}: ${p.message}`)).toEqual([]);
   });
 
   it('an overage may be set on any line (T16): 100 kg with 10 % is 110 kg', () => {

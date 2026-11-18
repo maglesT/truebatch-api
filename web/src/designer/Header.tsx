@@ -39,6 +39,8 @@ export function HeaderFields({ header, onChange, md }: { header: Header; onChang
         <label>Retest period (months)<input className="dec" aria-label="Retest period (months)" inputMode="numeric" style={{ width: '5em' }} value={header.retestMonths || ''}
           onChange={(e) => onChange({ ...header, retestMonths: Number(e.target.value.trim()) || 0 })} /></label>
       </div>
+      <label className="check"><input type="checkbox" checked={!!header.intermediate} onChange={(e) => onChange(e.target.checked ? { ...header, intermediate: true } : (({ intermediate: _, ...h }) => h)(header) as Header)} />
+        This master makes an intermediate that goes to stores (one master per step of the route)</label>
       {/* TA-11: a balance is offered in these rooms or in a room the stage allows. */}
       <ChipSet label="Dispensing rooms (where the materials are weighed)" values={header.dispensingRooms ?? []} options={rooms.options} groups={rooms.groups} text={rooms.text}
         onChange={(dispensingRooms) => onChange({ ...header, dispensingRooms })} empty="None chosen yet: choose the rooms of master data where the materials are weighed" />

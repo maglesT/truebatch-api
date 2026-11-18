@@ -49,6 +49,22 @@ describe('master checks', () => {
     expect(masterChecks(d).filter((p) => p.rule === 'TA-11')).toEqual([]);
   });
 
+  it('TA-26 a master that packs fills and labels the containers in its last stage, reconciles every label issued and destroys the leftovers', () => {
+    const d = api();
+    d.formula.push({ key: 'label', materialItemId: 'm-l', code: 'PM-101', name: 'Drum label', stage: 'pack', role: 'packing material', quantity: '10', unit: 'units' });
+    const s = (key: string, block: string, settings: object = {}) => ({ key, block: { id: block, version: 1 }, checker: true, waitForCheck: false, critical: false, flow: { kind: 'none' as const }, settings });
+    const pack = { key: 'pack', name: 'Pack and label', kind: 'normal' as const, roomTypes: [], machineTypes: [], role: 'Packing operator', uses: [], steps: [
+      s('labels', 'pack-material-issue', { material: { formula: 'label' }, unit: 'units' }),
+      { ...s('fill', 'container-fill', { nominal: '25.0 kg', tolerance: '0.5' }), flow: { kind: 'repeat-until' as const, maxRounds: 10 } },
+      s('rec', 'printed-reconciliation', { material: { formula: 'label' }, unit: 'units', issued: { ref: 'pack/labels/issued' } }), s('destroy', 'destruction'),
+      s('yield', 'stage-yield', { theoretical: { ref: 'drying/yield/output' }, yieldLimit: { low: '99.0', high: '100.5', unit: '%' } })] };
+    const ta26 = (change: (p: typeof pack) => void) => { const x = structuredClone(pack); change(x); const m = { ...d, stages: [...d.stages, x as unknown as (typeof d.stages)[number]] }; return checks(m).filter((p) => p.rule === 'TA-26').map((p) => p.message); };
+    expect(ta26(() => {})).toEqual([]);
+    expect(ta26((p) => { p.steps = p.steps.filter((t) => t.key !== 'fill'); })).toEqual(['The last stage, Pack and label, fills and labels the containers: it needs the Fill and label a container step (Pack and label)']);
+    expect(ta26((p) => { p.steps = p.steps.filter((t) => t.key !== 'rec'); })).toEqual(['The labels Drum label issued in Pack and label have no reconciliation step']);
+    expect(ta26((p) => { p.steps = p.steps.filter((t) => t.key !== 'destroy'); })).toEqual(['Pack and label issues labels: batch-coded leftovers need the destruction step']);
+  });
+
   it('a draft may be incomplete, but its shape is checked', () => {
     expect(masterSchema.safeParse({ ...api(), stages: [{ key: 'X Y' }] }).success).toBe(false);
   });
