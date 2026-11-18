@@ -101,7 +101,14 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       if (st.flow.kind === 'repeat-until') {
         if (!st.flow.maxRounds) error(`${p}.flow`, 'A repeat-until step needs the most rounds allowed');
         const stop = st.flow.stop ?? block.stop;
-        if (!stop || !block.calcs.some((c) => c.name === stop)) error(`${p}.flow`, 'A repeat-until step needs a stop check (a calculation of its block)');
+        const stopCalc = block.calcs.find((c) => c.name === stop);
+        if (!stop || !stopCalc) error(`${p}.flow`, 'A repeat-until step needs a stop check (a calculation of its block)');
+        // Found in the Phase E screen run: a stop check on an optional setting the master left unset is left out, so it
+        // never passes and the rounds can only end at the most rounds allowed (a TLC end point with the IPC check as stop).
+        else for (const [, name] of JSON.stringify(stopCalc.args).matchAll(/"\$([a-zA-Z0-9]+)\?"/g)) {
+          const bs = block.settings.find((x) => x.name === name);
+          if (bs && name && st.settings[name] === undefined) error(`${p}.flow`, `${stopCalc.label} stops the rounds, but ${bs.label} is not set, so it never passes: set it, or pick the check that stops the rounds (e.g. End point seen) under More options`);
+        }
       }
       if (st.everyMinutes && st.flow.kind !== 'repeat-until') error(`${p}.everyMinutes`, 'Checks every N minutes need a repeat-until step');
       const later = st.everyMinutesLater;
