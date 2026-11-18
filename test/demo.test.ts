@@ -50,22 +50,22 @@ describe('the engine: a skip ends the wait at once', () => {
     expect(timers(doc, [...skipped, ev('started', '1.1.0.1', { min: 400 })], at(500))).toEqual([]);
   });
 
-  describe('a mixing time (T13 from a start timer to an end timer) is a wait until its lower limit', () => {
-    const mixing = (limit: object) => small([{ steps: [{ block: { id: 'dry-mix', version: 1 }, settings: { mixTimeLimit: limit } }] }]);
+  describe('an addition time (T13 from a start timer to an end timer) is a wait until its lower limit', () => {
+    const mixing = (limit: object) => small([{ steps: [{ block: { id: 'charge-liquid', version: 1 }, checker: true, settings: { target: '100 L', unit: 'L', tolerance: '1.0', additionTimeLimit: limit } }] }]);
     const doc = mixing({ low: '10', high: '30', unit: 'min' });
     const stamp = (min: number) => `${at(min).toISOString().slice(0, 19)}Z`;
-    const begun = [ev('started', '0.1.0.1', { min: 0 }), ev('value', '0.1.0.1', { min: 1, payload: { values: { mixStart: stamp(1) } } })];
-    const id = 'dur:0.1.0.1:mixTime';
-    const mixTime = (events: StepEvent[], end: number, d = doc) => evaluate(d, events, { stage: 0, sub: 1, step: 0, round: 1 }, { mixStart: stamp(1), mixEnd: stamp(end) }).mixTime;
+    const begun = [ev('started', '0.1.0.1', { min: 0 }), ev('value', '0.1.0.1', { min: 1, payload: { values: { additionStart: stamp(1) } } })];
+    const id = 'dur:0.1.0.1:additionTime';
+    const mixTime = (events: StepEvent[], end: number, d = doc) => evaluate(d, events, { stage: 0, sub: 1, step: 0, round: 1 }, { additionStart: stamp(1), additionEnd: stamp(end) }).additionTime;
 
     it('runs from the recorded start to the lower limit, then is due; gone once the end is recorded; none without a lower limit', () => {
       const t = (now: number, events = begun, d = doc) => timers(d, events, at(now)).map((x) => `${x.id} ${x.kind} ${x.state} ${x.at.toISOString()}`);
-      expect(timers(doc, begun, at(5))).toMatchObject([{ id, kind: 'duration', key: { stage: 0, step: 0 }, label: 'Mixing time of “Dry mix for a time” (at least 10 min)', from: at(1), at: at(11), state: 'running' }]);
+      expect(timers(doc, begun, at(5))).toMatchObject([{ id, kind: 'duration', key: { stage: 0, step: 0 }, label: 'Addition time of “Charge a liquid” (at least 10 min)', from: at(1), at: at(11), state: 'running' }]);
       expect([t(10), t(12)]).toEqual([[`${id} duration due soon ${at(11).toISOString()}`], [`${id} duration due ${at(11).toISOString()}`]]);
       expect(t(0, begun.slice(0, 1))).toEqual([]);
-      expect(t(12, [...begun, ev('value', '0.1.0.1', { min: 11, payload: { values: { mixEnd: stamp(11) } } })])).toEqual([]);
+      expect(t(12, [...begun, ev('value', '0.1.0.1', { min: 11, payload: { values: { additionEnd: stamp(11) } } })])).toEqual([]);
       expect(t(5, begun, mixing({ high: '30', unit: 'min' }))).toEqual([]);
-      expect(timers(mixing({ low: '0.5', high: '2', unit: 'h' }), begun, at(5))).toMatchObject([{ id, at: at(31), label: 'Mixing time of “Dry mix for a time” (at least 0.5 h)' }]);
+      expect(timers(mixing({ low: '0.5', high: '2', unit: 'h' }), begun, at(5))).toMatchObject([{ id, at: at(31), label: 'Addition time of “Charge a liquid” (at least 0.5 h)' }]);
     });
 
     it('skipped: due from the skip, and the lower limit counts as met with the real duration shown; the upper limit still applies', () => {
@@ -109,7 +109,7 @@ describe('demo skip through the server', () => {
 
   beforeAll(async () => {
     t = await freshApp(undefined, true);
-    t.master.products_.push({ ...item('p', 'P', 'P'), strength: null, dosageForm: 'tablet' });
+    t.master.materials_.push({ ...item('p', 'P', 'P'), category: 'API', unit: 'kg' });
     t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' });
     const people = { author: ['truebatch_api.master.author'], issuer: ['truebatch_api.batch.issue'], asha: ['truebatch_api.batch.operate', 'truebatch_api.demo.skip'],
       ravi: ['truebatch_api.batch.operate'], meera: ['truebatch_api.qa.release'] } as const;
@@ -178,8 +178,8 @@ describe('demo skip through the server', () => {
     expect(await skipWaits(t.sql, b.batchNo, undefined, 'asha')).toEqual({ skipped: [] });
   });
 
-  it('a mixing time: skipped by the button or the terminal command, its lower limit counts as met; the result says DEMO', async () => {
-    const mix = { key: 'mix', block: { id: 'dry-mix', version: 1 }, checker: false, settings: { mixTimeLimit: { low: '10', high: '30', unit: 'min' } } };
+  it('an addition time: skipped by the button or the terminal command, its lower limit counts as met; the result says DEMO', async () => {
+    const mix = { key: 'mix', block: { id: 'charge-liquid', version: 1 }, checker: true, settings: { target: '100 L', unit: 'L', tolerance: '1.0', additionTimeLimit: { low: '10', high: '30', unit: 'min' } } };
     const yieldStep = { block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '0.100 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' } } };
     const m = await as('author', 'POST', '/api/masters', { doc: small([{ steps: [mix, { ...mix, key: 'mix-2' }, yieldStep] }]) });
     const { id: mv } = m.json() as { id: number };
@@ -187,35 +187,35 @@ describe('demo skip through the server', () => {
     const issue2 = async () => (await as('issuer', 'POST', '/api/batches', { masterVersionId: mv, proof: proofFor('issuer') })).json() as { id: number; batchNo: string };
     const b = await issue2();
     const record = (id: number, values: object) => as('asha', 'POST', `/api/batches/${id}/steps/0.1.0.1/record`, { values });
-    const timer = 'dur:0.1.0.1:mixTime';
+    const timer = 'dur:0.1.0.1:additionTime';
     expect((await as('asha', 'POST', `/api/batches/${b.id}/steps/0.1.0.1/start`)).statusCode).toBe(200);
     expect((await as('asha', 'POST', `/api/batches/${b.id}/demo-skip`, { timer })).json()).toMatchObject({ error: 'no_wait' });
-    expect((await record(b.id, { mixStart: 'now' })).statusCode).toBe(200);
+    expect((await record(b.id, { additionStart: 'now' })).statusCode).toBe(200);
     const d = (await as('asha', 'GET', `/api/batches/${b.id}`)).json() as { timers: { id: string; kind: string; state: string; label: string }[] };
-    expect(d.timers).toMatchObject([{ id: timer, kind: 'duration', state: 'running', label: 'Mixing time of “Dry mix for a time” (at least 10 min)' }]);
+    expect(d.timers).toMatchObject([{ id: timer, kind: 'duration', state: 'running', label: 'Addition time of “Charge a liquid” (at least 10 min)' }]);
     expect((await as('ravi', 'POST', `/api/batches/${b.id}/demo-skip`, { timer })).statusCode).toBe(403);
     expect((await call(plain, plainCookies.asha!, 'POST', `/api/batches/${b.id}/demo-skip`, { timer })).statusCode).toBe(403);
     expect((await as('asha', 'POST', `/api/batches/${b.id}/demo-skip`, { timer })).statusCode).toBe(200);
-    expect((await record(b.id, { mixEnd: 'now' })).statusCode).toBe(200);
+    expect((await record(b.id, { additionEnd: 'now' })).statusCode).toBe(200);
     type Row = { id: string; values: Record<string, string>; results: Record<string, { value: string; shown: string; check: { pass: boolean } }> };
     const mixed = async (id: number) => ((await as('asha', 'GET', `/api/batches/${id}`)).json() as { steps: Row[] }).steps.find((s) => s.id === '0.1.0.1')!;
     // The real recorded duration (well under the 10 min) counts as met; nothing recorded is changed.
     const first = await mixed(b.id);
     // Start and end are both "now": 0 s, or 1 s when the clock ticks between the two records (0.0166… min).
-    expect(first.results.mixTime).toMatchObject({ shown: expect.stringContaining('· DEMO: wait skipped'), check: { pass: true } });
-    expect(Number(first.results.mixTime!.value)).toBeLessThan(0.1);
-    expect(first.values.mixEnd).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    expect(first.results.additionTime).toMatchObject({ shown: expect.stringContaining('· DEMO: wait skipped'), check: { pass: true } });
+    expect(Number(first.results.additionTime!.value)).toBeLessThan(0.1);
+    expect(first.values.additionEnd).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
     // The terminal command skips a running mixing time too; without a skip the same short mix is out of limits.
     const [c, e] = [await issue2(), await issue2()];
     for (const x of [c, e]) {
       expect((await as('asha', 'POST', `/api/batches/${x.id}/steps/0.1.0.1/start`)).statusCode).toBe(200);
-      expect((await record(x.id, { mixStart: 'now' })).statusCode).toBe(200);
+      expect((await record(x.id, { additionStart: 'now' })).statusCode).toBe(200);
     }
-    expect(await skipWaits(t.sql, c.batchNo, undefined, 'asha')).toEqual({ skipped: ['Mixing time of “Dry mix for a time” (at least 10 min)'] });
-    for (const x of [c, e]) expect((await record(x.id, { mixEnd: 'now' })).statusCode).toBe(200);
-    expect((await mixed(c.id)).results.mixTime).toMatchObject({ check: { pass: true } });
-    expect((await mixed(e.id)).results.mixTime).toMatchObject({ check: { pass: false } });
-    expect(JSON.stringify((await mixed(e.id)).results.mixTime)).not.toContain('DEMO');
+    expect(await skipWaits(t.sql, c.batchNo, undefined, 'asha')).toEqual({ skipped: ['Addition time of “Charge a liquid” (at least 10 min)'] });
+    for (const x of [c, e]) expect((await record(x.id, { additionEnd: 'now' })).statusCode).toBe(200);
+    expect((await mixed(c.id)).results.additionTime).toMatchObject({ check: { pass: true } });
+    expect((await mixed(e.id)).results.additionTime).toMatchObject({ check: { pass: false } });
+    expect(JSON.stringify((await mixed(e.id)).results.additionTime)).not.toContain('DEMO');
   });
 
 });

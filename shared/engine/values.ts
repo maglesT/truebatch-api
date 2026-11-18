@@ -138,65 +138,102 @@ function refValue(doc: MasterDoc, events: readonly StepEvent[], here: StepKey, r
   return name in c.values ? c.values[name] : c.results[name] ? asQ(c.results[name]) : undefined;
 }
 
-const tablets = (doc: MasterDoc) => `${doc.header.batchSize} tablets`;
-const perBatch = (mg: string, doc: MasterDoc) => callTemplate('T8', { mode: 'per unit', perUnit: `${mg} mg`, count: tablets(doc), unit: 'kg' });
+/** A header value: the API expected per batch. */
+export const headerValue = (doc: MasterDoc, _h: 'batchSize'): string => `${doc.header.batchSize} kg`;
 
-/** A header value: as written, or the batch weight (T8: weight per tablet × batch size). */
-export function headerValue(doc: MasterDoc, h: 'batchSize' | 'coreWeight' | 'coatedWeight' | 'coreBatch' | 'coatedBatch'): string | Stored {
-  const { coreWeightMg: core, coatedWeightMg: coated } = doc.header;
-  if (h === 'batchSize') return tablets(doc);
-  if (h === 'coreWeight') return `${core} mg`;
-  if (h === 'coreBatch') return store(perBatch(core, doc));
-  if (coated === undefined) return { ok: false, message: 'The master has no coated tablet weight' };
-  return h === 'coatedWeight' ? `${coated} mg` : store(perBatch(coated, doc));
-}
-
-/** The adjusted quantity a step recorded for a formula line (its setting that asks for the adjusted line). */
-function recordedAdjusted(doc: MasterDoc, events: readonly StepEvent[], here: StepKey, lineKey: string, uses: number[]): Stored | undefined {
-  for (const [si, s] of doc.stages.entries()) for (const [ti, t] of s.steps.entries()) {
-    for (const [name, v] of Object.entries(t.settings)) {
-      if (typeof v === 'object' && 'formula' in v && v.formula === lineKey && v.adjusted) {
-        const r = latestValues(events, si, si === here.stage ? here.sub : 1, ti, uses).results[name];
-        if (r) return r;
-      }
-    }
+/**
+ * The key input of a stage (T28, plan 3c.2): its starting material line (a quantity in kg), or else the intermediate of
+ * the earlier stage it uses (its expected kg). Equivalents and quantities per kg are worked out on it.
+ */
+export interface KeyInput { name: string; planned: string; mw?: string; line?: FormulaLine; from?: number }
+export function keyInput(doc: MasterDoc, stageKey: string): KeyInput | undefined {
+  const sm = doc.formula.find((l) => l.stage === stageKey && l.role === 'starting material');
+  if (sm) return sm.quantity && sm.unit === 'kg' ? { name: sm.name, planned: `${sm.quantity} kg`, mw: sm.mw, line: sm } : undefined;
+  for (const u of doc.stages.find((s) => s.key === stageKey)?.uses ?? []) {
+    const from = doc.stages.findIndex((s) => s.key === u && s.kind === 'normal' && s.produces);
+    const p = doc.stages[from]?.produces;
+    if (p) return p.expectedKg ? { name: p.name, planned: `${p.expectedKg} kg`, mw: p.mw, from } : undefined;
   }
   return undefined;
 }
 
+const qText = (q: Q) => (typeof q === 'string' ? q : `${q.value} ${q.unit}`);
 /**
- * A formula line's batch quantity: T8 (mg per tablet × batch size), then, when adjusted, the line's adjustments in
- * order: T11 salt factor, T9 potency (with the lot's assay, water, LOD from this step) or T18 content, T16 overage,
- * or T10 for a filler that compensates other lines. The worked lines are joined.
+ * The key input as charged in this batch: the net weight of the step that weighed the starting material, or the output
+ * of the stage yield of the intermediate's stage; until then, as planned.
+ */
+function actualKey(doc: MasterDoc, events: readonly StepEvent[], here: StepKey, k: KeyInput, uses: number[]): { q: Q; actual: boolean; text: string } {
+  for (const [si, s] of doc.stages.entries()) for (const [ti, t] of s.steps.entries()) {
+    const c = () => latestValues(events, si, si === here.stage ? here.sub : 1, ti, uses);
+    if (k.line && Object.values(t.settings).some((v) => typeof v === 'object' && 'formula' in v && v.formula === k.line!.key)) {
+      const net = c().results.net;
+      if (net?.ok) return { q: { value: net.value, unit: net.unit }, actual: true, text: net.shown.split(' = ').at(-1)! };
+    }
+    if (k.from === si && t.block.id === 'stage-yield') {
+      const out = c().values.output;
+      if (out && typeof out === 'object' && 'value' in out) return { q: out as Q, actual: true, text: qText(out as Q) };
+    }
+  }
+  return { q: k.planned, actual: false, text: k.planned };
+}
+/** A formula line's quantity as the master writes it: "1.20 eq", "250.0 kg", "5.0 L/kg of the key input". */
+export const formulaText = (l: FormulaLine): string => (l.eq !== undefined ? `${l.eq} eq${l.unit === 'L' ? ' (as a volume)' : ''}`
+  : l.quantity && l.unit ? `${l.quantity} ${l.unit}${l.unit.includes('/') ? ' of the key input' : ''}` : '(not set)');
+
+/**
+ * A formula line's batch quantity: as written per batch (kg, L), per kg of the stage's key input (T8), or by molar
+ * equivalents of it (T28); on the actual key input once it is recorded. Then, when adjusted, the line's adjustments in
+ * order: T11 salt factor, T9 potency (with the lot's assay, water, LOD from this step) or T18 content, T16 overage.
  */
 export function lineQuantity(doc: MasterDoc, events: readonly StepEvent[], here: StepKey, line: FormulaLine, adjusted: boolean, values: Record<string, Value>, uses: number[] = []): Stored {
-  let q: Outcome<object> = perBatch(line.mgPerTablet, doc);
+  let q: Outcome<object>;
   const shown: string[] = [];
+  const perKey = line.eq !== undefined || line.unit === 'L/kg' || line.unit === 'kg/kg';
+  if (!perKey) {
+    if (!line.quantity || !line.unit) return { ok: false, message: `${line.name} has no quantity in the formula` };
+    q = callTemplate('T8', { mode: 'product', factors: [`${line.quantity} ${line.unit}`, '1'] });
+    if (q.ok) q = { ...q, shown: `${line.quantity} ${line.unit} per batch = ${q.shown.split(' = ').at(-1)}` };
+  } else {
+    const k = keyInput(doc, line.stage);
+    if (!k) return { ok: false, message: `${line.name} is charged per kg or by equivalents of the key input, but its stage has no key input (a starting material in kg, or the intermediate of a stage it uses with its expected kg)` };
+    const key = actualKey(doc, events, here, k, uses);
+    const on = `${key.actual ? 'on the actual' : 'on the planned'} ${k.name} ${key.text}`;
+    if (line.eq !== undefined) {
+      q = callTemplate('T28', { mode: 'equivalents', key: key.q, keyMw: k.mw ?? '', eq: line.eq, mw: line.mw ?? '',
+        ...(line.unit === 'L' ? { density: `${line.density ?? ''} kg/L`, unit: 'L' } : { unit: 'kg' }) });
+    } else {
+      const kg = typeof key.q === 'string' ? key.q.split(/\s+/)[0]! : key.q.value;
+      q = callTemplate('T8', { mode: 'product', factors: [`${line.quantity ?? ''} ${line.unit === 'L/kg' ? 'L' : 'kg'}`, kg] });
+      if (q.ok) q = { ...q, shown: `${line.quantity} ${line.unit} × ${q.shown.split(' × ')[1]}` };
+    }
+    if (q.ok) q = { ...q, shown: `${q.shown} (${on})` };
+  }
   const next = (o: Outcome<object>) => { if (q.ok) shown.push(q.shown); q = o; };
   const a = adjusted ? line.adjust : undefined;
   const certificate = (k: string) => values[k] as Q | undefined;
-  if (a?.salt && q.ok) next(callTemplate('T11', { quantity: exact(q.value, q.unit), from: a.salt.from, to: a.salt.to, unit: 'kg' }));
+  const unit = (x: Outcome<object>) => (x.ok ? (x as { unit: string }).unit : 'kg');
+  if (a?.salt && q.ok) next(callTemplate('T11', { quantity: exact(q.value, q.unit), from: a.salt.from, to: a.salt.to, unit: unit(q) }));
   if (a?.potency && q.ok) {
     next(callTemplate('T9', { ...a.potency, standard: a.salt ? q : exact(q.value, q.unit),
-      assay: certificate('assay'), water: certificate('water'), lod: certificate('lod'), unit: 'kg' }));
+      assay: certificate('assay'), water: certificate('water'), lod: certificate('lod'), unit: unit(q) }));
   } else if (a?.content && q.ok) {
-    next(callTemplate('T18', { ...a.content, target: exact(q.value, q.unit), content: certificate('content'), unit: 'kg' }));
+    next(callTemplate('T18', { ...a.content, target: exact(q.value, q.unit), content: certificate('content'), unit: unit(q) }));
   }
-  if (a?.overage && q.ok) next(callTemplate('T16', { quantity: exact(q.value, q.unit), overagePercent: a.overage.percent, maxOveragePercent: a.overage.maxPercent, unit: 'kg' }));
-  if (a?.compensates?.length && q.ok) {
-    const others = a.compensates.map((k) => ({ k, l: doc.formula.find((f) => f.key === k), r: recordedAdjusted(doc, events, here, k, uses) }));
-    const missing = others.find((o) => !o.r?.ok);
-    if (missing) return { ok: false, message: `Weigh ${missing.l?.name ?? missing.k} first: ${line.name} compensates its adjusted quantity` };
-    next(callTemplate('T10', { fillers: [{ name: line.name, standard: exact(q.value, q.unit) }], unit: 'kg',
-      adjusted: others.map((o) => ({ name: o.l?.name ?? o.k, standard: perBatchQ(doc, o.l), adjusted: asQ(o.r!) })) }));
-  }
+  if (a?.overage && q.ok) next(callTemplate('T16', { quantity: exact(q.value, q.unit), overagePercent: a.overage.percent, maxOveragePercent: a.overage.maxPercent, unit: unit(q) }));
   const r = store(q);
   return r.ok && shown.length ? { ...r, shown: [...shown, r.shown].join('; then ') } : r;
 }
-const perBatchQ = (doc: MasterDoc, l: FormulaLine | undefined) => {
-  const r = l ? store(perBatch(l.mgPerTablet, doc)) : undefined;
-  return r ? asQ(r) : undefined;
-};
+
+/** The molar theoretical yield of a stage (T28): its key input (actual once recorded) × product per mol × the product's MW. */
+export function molarTheoretical(doc: MasterDoc, events: readonly StepEvent[], here: StepKey, uses: number[] = []): Stored {
+  const s = doc.stages[here.stage]!;
+  const k = keyInput(doc, s.key);
+  const mw = s.produces?.mw ?? (here.stage === doc.stages.length - 1 || !s.produces ? doc.header.mw : undefined);
+  if (!k) return { ok: false, message: `Stage ${s.name} has no key input for a molar theoretical yield` };
+  if (!mw) return { ok: false, message: `The molecular weight of what ${s.name} makes is not set` };
+  const key = actualKey(doc, events, here, k, uses);
+  return store(callTemplate('T28', { mode: 'theoretical yield', key: key.q, keyMw: k.mw ?? '', mw, ...(s.produces?.perMol ? { perMol: s.produces.perMol } : {}), unit: 'kg' }));
+}
 
 /**
  * The results of a step's calculations for its current values: settings that refer to the formula or the header are
@@ -232,10 +269,11 @@ export function evaluate(doc: MasterDoc, events: readonly StepEvent[], key: Step
       const line = doc.formula.find((l) => l.key === v.formula);
       if (s.kind === 'material' || !line) continue;
       results[s.name] = lineQuantity(doc, events, key, line, v.adjusted ?? false, values, uses);
+    } else if ('molar' in v) {
+      results[s.name] = molarTheoretical(doc, events, key, uses);
     } else {
-      const h = headerValue(doc, v.header);
-      if (typeof h === 'string') { inputs[s.name] = h; continue; }
-      results[s.name] = h;
+      inputs[s.name] = headerValue(doc, v.header);
+      continue;
     }
     const r = results[s.name]!;
     if (r.ok) { inputs[s.name] = asQ(r); asResults[s.name] = { ok: true, value: new Dec(r.value), unit: r.unit }; }

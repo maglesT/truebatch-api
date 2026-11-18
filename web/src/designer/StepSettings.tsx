@@ -22,7 +22,7 @@ export function StepSettings({ doc, si, ti, onChange }: { doc: MasterDoc; si: nu
   const block = findBlock(step.block);
   if (!block) return <p className="error">No block {step.block.id} version {step.block.version} in the library.</p>;
   // An optional step field: set, or left out when undefined.
-  const opt = <K extends 'everyMinutesLater' | 'onlyIf' | 'orderAfter' | 'applyPerCharge'>(k: K, v: Step[K] | undefined) => {
+  const opt = <K extends 'everyMinutesLater' | 'onlyIf' | 'orderAfter'>(k: K, v: Step[K] | undefined) => {
     const next: Step = { ...step, [k]: v };
     if (v === undefined) delete next[k];
     onChange(next);
@@ -108,14 +108,10 @@ export function StepSettings({ doc, si, ti, onChange }: { doc: MasterDoc; si: nu
             <label>After (minutes from the first round)<input type="number" min={1} value={step.everyMinutesLater?.afterMinutes ?? ''} onChange={(e) => opt('everyMinutesLater', e.target.value ? { afterMinutes: Number(e.target.value), everyMinutes: step.everyMinutesLater?.everyMinutes ?? step.everyMinutes! } : undefined)} /></label>
             {step.everyMinutesLater && <label>then a round every (minutes)<input type="number" min={1} value={step.everyMinutesLater.everyMinutes} onChange={(e) => opt('everyMinutesLater', { ...step.everyMinutesLater!, everyMinutes: Number(e.target.value) || 1 })} /></label>}
           </>}
-          <label>Only when the core batch is at most (kg)<Decimal label="Only when the core batch is at most (kg)" placeholder="always" value={step.onlyIf?.limit.high}
-            onChange={(v) => opt('onlyIf', v ? { header: 'coreBatch', limit: { high: v, unit: 'kg' } } : undefined)} /></label>
+          <label>Only when the batch size is at most (kg)<Decimal label="Only when the batch size is at most (kg)" placeholder="always" value={step.onlyIf?.limit.high}
+            onChange={(v) => opt('onlyIf', v ? { header: 'batchSize', limit: { high: v, unit: 'kg' } } : undefined)} /></label>
           <label>Order-critical: must come after<select value={step.orderAfter ?? ''} onChange={(e) => opt('orderAfter', e.target.value || undefined)}>
             <option value="">(not order-critical)</option>{doc.stages[si]!.steps.map((t, j) => t.key !== step.key && <option key={t.key} value={t.key}>{j + 1}. {stepTitle(doc, t)}</option>)}</select></label>
-          {/^(coat|spray-coat)$/.test(block.id) && <>
-            <label>Liquid to apply<input aria-label="Liquid to apply" placeholder="e.g. 971 g" value={step.applyPerCharge?.liquid ?? ''} onChange={(e) => opt('applyPerCharge', e.target.value ? { liquid: e.target.value, charge: step.applyPerCharge?.charge ?? '' } : undefined)} /></label>
-            {step.applyPerCharge && <label>per charge of<input aria-label="per charge of" placeholder="e.g. 150 g" value={step.applyPerCharge.charge} onChange={(e) => opt('applyPerCharge', { ...step.applyPerCharge!, charge: e.target.value })} /></label>}
-          </>}
         </div>
       </details>
     </div>
@@ -224,12 +220,12 @@ function QuantitySource({ doc, si, ti, label, kind, value, onChange, missing }: 
 }) {
   const fits = (k: Kind | undefined) => !kind || k === kind;
   const refs = earlierRefs(doc, si, ti).filter((r) => fits(r.kind));
-  const code = value === undefined ? '' : typeof value === 'string' ? 'type' : 'formula' in value ? `${value.adjusted ? 'fa' : 'f'}:${value.formula}` : 'header' in value ? `h:${value.header}` : 'ref' in value ? `r:${value.ref}` : '';
+  const code = value === undefined ? '' : typeof value === 'string' ? 'type' : 'formula' in value ? `${value.adjusted ? 'fa' : 'f'}:${value.formula}` : 'header' in value ? `h:${value.header}` : 'ref' in value ? `r:${value.ref}` : 'm:';
   const pick = (c: string) => {
     const [k, ...rest] = c.split(':');
     const x = rest.join(':');
     onChange(k === 'type' ? `0 ${kind ? unitsOf(kind)[0]?.symbol ?? '' : 'kg'}`.trim() : k === 'f' || k === 'fa' ? { formula: x, ...(k === 'fa' ? { adjusted: true } : {}) }
-      : k === 'h' ? { header: x as (typeof HEADER_VALUES)[number] } : k === 'r' ? { ref: x } : undefined);
+      : k === 'h' ? { header: x as (typeof HEADER_VALUES)[number] } : k === 'r' ? { ref: x } : k === 'm' ? { molar: true } : undefined);
   };
   const typed = typeof value === 'string' ? /^(\S*)\s*(.*)$/.exec(value) : null;
   return (
@@ -247,9 +243,10 @@ function QuantitySource({ doc, si, ti, label, kind, value, onChange, missing }: 
         )}
         {HEADER_VALUES.some((h) => fits(HEADER_LABEL[h].kind)) && (
           <optgroup label="Header">
-            {HEADER_VALUES.filter((h) => fits(HEADER_LABEL[h].kind) && (!h.startsWith('coated') || doc.header.coatedWeightMg)).map((h) => <option key={h} value={`h:${h}`}>{HEADER_LABEL[h].label}</option>)}
+            {HEADER_VALUES.filter((h) => fits(HEADER_LABEL[h].kind)).map((h) => <option key={h} value={`h:${h}`}>{HEADER_LABEL[h].label}</option>)}
           </optgroup>
         )}
+        {fits('mass') && <option value="m:">the molar theoretical yield of this stage (T28)</option>}
         {refs.length > 0 && <optgroup label="An earlier step">{refs.map((r) => <option key={r.ref} value={`r:${r.ref}`}>{r.label}</option>)}</optgroup>}
       </select>
       {typed && (

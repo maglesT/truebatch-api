@@ -6,7 +6,7 @@ import { batchRefusal, batchView, deviationText, fieldLabel, filedKey, handField
 import { batchRecordDoc } from '../server/batch-record.js';
 import { loadBatch, recordInput } from '../server/routes/batches.js';
 import { call, freshApp, handLabels, login, proofFor, seedUser, TEST_DATABASE_URL, type TestApp } from './helpers.js';
-import { at, ev, small, tablet, placed } from './engine-fixture.js';
+import { at, ev, small, api, placed } from './engine-fixture.js';
 import { inLogbook } from '../shared/engine/picks.js';
 
 // The links to Deviations, QMS, Logbook and MMS (owner 15 Nov 2026), each read through a fake provider schema in the
@@ -42,7 +42,7 @@ beforeAll(async () => {
       grant usage on schema ${S.dv}, ${S.qms}, ${S.lb}, ${S.mms} to truebatch_api_app;
       grant select on all tables in schema ${S.dv}, ${S.qms}, ${S.lb}, ${S.mms} to truebatch_api_app;
       insert into ${S.qms}.change_v1 (number, status, title, products, qa_approved_at) values
-        ('CC-2026-0001', 'implementation', 'New supplier of lactose', 'PRD-001', now()), ('CC-2026-0002', 'qa', 'Press speed', null, null),
+        ('CC-2026-0001', 'implementation', 'New supplier of lactose', 'API-001', now()), ('CC-2026-0002', 'qa', 'Press speed', null, null),
         ('CC-2026-0003', 'rejected', 'Drop the coating', null, now()),
         ('CC-2026-0004', 'implementation', 'Larger batch of paracetamol', 'FG-PCM500 Paracetamol 500 mg tablets', now()),
         ('CC-2026-0005', 'closure', 'New sifter screen', null, now());
@@ -52,15 +52,15 @@ beforeAll(async () => {
         ('eq-str3', 'STR-03', 'equipment', 'in use', true, '{}', '{}', 'XB26001', null, null, now()),
         ('eq-str4', 'STR-04', 'equipment', 'clean', true, '{}', '{}', null, null, null, now() - interval '10 minutes'),
         ('eq-bal', 'BAL-01', 'instrument', 'clean', true, '{}', '{}', null, null, null, now()),
-        ('eq-rmg', 'RMG-01', 'equipment', 'clean', true, '{}', '{}', null, null, null, now()),
+        ('eq-rmg', 'RCT-01', 'equipment', 'clean', true, '{}', '{}', null, null, null, now()),
         ('rm-1', 'GRN-01', 'area', 'clean', true, '{}', '{}', null, '2026-11-15 05:30+00', 'CLEANER ONE', now());
       insert into ${S.mms}.lot_v1 (lot_number, kind, material_master_id, material_code, status, expiry_date, retest_date, qc_report_ref) values
-        ('API-OK', 'material', 'mat-api', 'MAT-001', 'approved', '2099-01-31', null, 'QC-26-101'),
-        ('API-Q', 'material', 'mat-api', 'MAT-001', 'quarantine', '2099-01-31', null, null),
-        ('API-EXP', 'material', 'mat-api', 'MAT-001', 'approved', '2020-01-31', null, 'QC-19-001'),
-        ('API-RT', 'material', 'mat-api', 'MAT-001', 'approved', '2099-01-31', '2021-06-30', 'QC-20-001'),
-        ('API-ASIS', 'material', 'mat-api', 'MAT-001', 'approved', '2099-01-31', null, 'QC-26-102'),
-        ('LAC-1', 'material', 'mat-lac', 'MAT-002', 'approved', '2099-01-31', null, 'QC-26-103');
+        ('API-OK', 'material', 'mat-ksm', 'MAT-001', 'approved', '2099-01-31', null, 'QC-26-101'),
+        ('API-Q', 'material', 'mat-ksm', 'MAT-001', 'quarantine', '2099-01-31', null, null),
+        ('API-EXP', 'material', 'mat-ksm', 'MAT-001', 'approved', '2020-01-31', null, 'QC-19-001'),
+        ('API-RT', 'material', 'mat-ksm', 'MAT-001', 'approved', '2099-01-31', '2021-06-30', 'QC-20-001'),
+        ('API-ASIS', 'material', 'mat-ksm', 'MAT-001', 'approved', '2099-01-31', null, 'QC-26-102'),
+        ('LAC-1', 'material', 'mat-amn', 'MAT-002', 'approved', '2099-01-31', null, 'QC-26-103');
       update ${S.mms}.lot_v1 set stock = 25, unit = 'kg' where lot_number = 'API-OK';
       insert into ${S.mms}.lot_test_v1 (lot_number, report_ref, test, result, value, unit, basis) values
         ('API-OK', 'QC-26-101', 'Assay', '99.1 %', 99.1, '%', 'dried'), ('API-OK', 'QC-26-101', 'LOD', '0.4 %', 0.4, '%', 'as is'),
@@ -68,14 +68,14 @@ beforeAll(async () => {
     provider = connect(TEST_DATABASE_URL, { role: 'truebatch_api_app', link: true });
     return links({ deviations: provider, qms: provider, logbook: provider, mms: provider }, { deviations: S.dv, qms: S.qms, logbook: S.lb, mms: S.mms });
   });
-  t.master.products_.push({ ...item('prd-1', 'PRD-001', 'Examplol 100 mg film-coated tablets'), strength: '100 mg', dosageForm: 'tablet' },
-    { ...item('p', 'P', 'P'), strength: null, dosageForm: 'tablet' });
-  for (const l of tablet().formula) t.master.materials_.push({ ...item(l.materialItemId, l.code, l.name), category: null, unit: 'kg' });
+  t.master.materials_.push({ ...item('prd-1', 'API-001', 'Examplone hydrochloride'), category: 'API', unit: 'kg' },
+    { ...item('p', 'P', 'P'), category: 'API', unit: 'kg' });
+  for (const l of api().formula) t.master.materials_.push({ ...item(l.materialItemId, l.code, l.name), category: null, unit: 'kg' });
   t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' });
   t.master.equipment_.push(...['', '2', '3', '4', '5'].map((n) => ({ ...item(`eq-str${n}`, `STR-0${n || 1}`, 'Stirrer'), kind: 'equipment' as const, type: 'stirrer', room: 'GRN-01' })),
     { ...item('eq-bal', 'BAL-01', 'Balance 60 kg'), kind: 'instrument', type: 'balance', room: 'DSP-01' },
-    { ...item('eq-rmg', 'RMG-01', 'Granulator'), kind: 'equipment', type: 'granulator', room: 'GRN-01' });
-  t.master.rooms_.push({ ...item('rm-1', 'GRN-01', 'Granulation room 1'), area: 'granulation', grade: 'D' });
+    { ...item('eq-rmg', 'RCT-01', 'Reactor'), kind: 'equipment', type: 'reactor', room: 'GRN-01' });
+  t.master.rooms_.push({ ...item('rm-1', 'GRN-01', 'Step 1: condensation room 1'), area: 'step1', grade: 'D' });
   const people = {
     author: ['truebatch_api.master.author'], checker: ['truebatch_api.master.check'], quality: ['truebatch_api.master.approve'], quality2: ['truebatch_api.master.approve'],
     issuer: ['truebatch_api.batch.issue'], asha: ['truebatch_api.batch.operate', 'truebatch_api.batch.check'], ravi: ['truebatch_api.batch.check'],
@@ -226,8 +226,8 @@ describe('TA-11 Logbook: equipment and rooms fit for use', () => {
     } finally { await restore(S.lb); }
     const s = await stepOf(c.id, '0.1.0.1');
     expect(s.handFields.map((f) => f.name)).toEqual(['machine.clean', 'machine.calibrated', 'machine.inService', 'machine.qualified']);
-    expect(s.problems).toContain('Mixer: the calibration label is in date is not recorded');
-    expect(await problems(record(c.id, '0.1.0.1', { 'machine.calibrated': 'no' }))).toEqual(['Mixer: the calibration label is in date: if not, do not use it; use another, or raise a deviation.']);
+    expect(s.problems).toContain('Reactor, vessel or mixer: the calibration label is in date is not recorded');
+    expect(await problems(record(c.id, '0.1.0.1', { 'machine.calibrated': 'no' }))).toEqual(['Reactor, vessel or mixer: the calibration label is in date: if not, do not use it; use another, or raise a deviation.']);
     expect((await record(c.id, '0.1.0.1', handLabels('machine', 'machine'))).statusCode).toBe(200);
     expect((await sign('asha', c.id, '0.1.0.1', 'done')).statusCode).toBe(200);
     expect((await stepOf(c.id, '0.1.0.1')).state).toBe('done_awaiting_check');
@@ -268,9 +268,11 @@ describe('TA-11 Logbook: equipment and rooms fit for use', () => {
 describe('TA-12 MMS: only released, in-date lots of the material; certificate values pulled', () => {
   let b: { id: number; batchNo: string };
   const granulation = () => {
-    const d = tablet();
+    const d = api();
     const g = d.stages[1]!;
     d.stages = [{ ...g, uses: [], steps: [g.steps[0]!, g.steps[2]!, g.steps[6]!] }];
+    // 10.0 kg of the starting material, the size of the lots below.
+    d.formula = d.formula.filter((l) => l.stage === g.key).map((l) => (l.key === 'ksm' ? { ...l, quantity: '10.0' } : l));
     return d;
   };
   beforeAll(async () => {
@@ -280,7 +282,7 @@ describe('TA-12 MMS: only released, in-date lots of the material; certificate va
 
   it.each([
     ['NOPE', 'Lot NOPE is not in MMS.'],
-    ['LAC-1', 'Lot LAC-1 is MAT-002 in MMS, not MAT-001 Examplol.'],
+    ['LAC-1', 'Lot LAC-1 is MAT-002 in MMS, not MAT-001 Examplol acid.'],
     ['API-Q', 'Lot API-Q is in quarantine in MMS: only a released lot may be used.'],
     ['API-EXP', 'Lot API-EXP expired on 31 Jan 2020.'],
     ['API-RT', 'Lot API-RT is past its retest date 30 Jun 2021.'],
@@ -303,7 +305,7 @@ describe('TA-12 MMS: only released, in-date lots of the material; certificate va
   });
 
   it('the pick list offers the lots of the material MMS has released and in date', async () => {
-    const r = (await as('asha', 'GET', '/api/mms/lots?material=mat-api')).json() as { link: string; lots: { lotNumber: string }[] };
+    const r = (await as('asha', 'GET', '/api/mms/lots?material=mat-ksm')).json() as { link: string; lots: { lotNumber: string }[] };
     expect(r).toMatchObject({ link: 'ok' });
     expect(r.lots.map((l) => l.lotNumber)).toEqual(['API-ASIS', 'API-OK']);
   });
@@ -378,7 +380,7 @@ describe('TA-12 MMS: only released, in-date lots of the material; certificate va
     const uses = async (code: string) => (await t.owner.unsafe(`select batch_number from ${t.schema}_report.equipment_use_v1 where equipment_code = $1`, [code])).map((r) => r.batch_number);
     // The weighing above was signed on BAL-01; the charge's mixer is a use of the batch.
     expect(await uses('BAL-01')).toEqual([]);
-    expect(await uses('RMG-01')).toEqual([b.batchNo]);
+    expect(await uses('RCT-01')).toEqual([b.batchNo]);
     // Another batch weighs on BAL-01 at once, and the Logbook (its status unchanged: clean, in use by no batch) lets it.
     const other = await issue(granulation());
     await act('asha', other.id, '0.1.0.1', 'start');
@@ -457,7 +459,7 @@ describe('TA-21 Deviations: the deviation number and its status come from the De
 
 describe('TA-02 QMS: a new master version needs a QA-approved change control', () => {
   const draft = async () => {
-    const { id } = (await as('author', 'POST', '/api/masters', { doc: placed(tablet()) })).json() as { id: number };
+    const { id } = (await as('author', 'POST', '/api/masters', { doc: placed(api()) })).json() as { id: number };
     const hash = async (who: string) => ((await as(who, 'GET', `/api/master-versions/${id}/review`)).json() as { contentHash: string }).contentHash;
     const review = async (who: string, action: string, extra: object = {}) =>
       as(who, 'POST', `/api/master-versions/${id}/${action}`, { proof: proofFor(who), contentHash: await hash(who), ...extra });
@@ -487,10 +489,10 @@ describe('TA-02 QMS: a new master version needs a QA-approved change control', (
     const picks = (await as('quality', 'GET', `/api/change-controls?version=${id}`)).json() as { changes: { number: string; names: string }[] };
     expect(picks.changes.map((c) => [c.number, c.names])).toEqual([['CC-2026-0005', 'none'], ['CC-2026-0001', 'yes']]);
     expect((await review('quality', 'approve', { changeControl: 'CC-2026-0004' })).json()).toMatchObject({ error: 'other_product',
-      message: 'CC-2026-0004 is for FG-PCM500 Paracetamol 500 mg tablets in QMS, not for PRD-001 Examplol 100 mg film-coated tablets: pick the change control of this product.' });
+      message: 'CC-2026-0004 is for FG-PCM500 Paracetamol 500 mg tablets in QMS, not for API-001 Examplone hydrochloride: pick the change control of this product.' });
     expect((await review('quality', 'approve', { changeControl: 'CC-2026-0005' })).statusCode).toBe(200);
     const [e] = await t.owner<{ payload: { source: { changeControl: { shown: string } } } }[]>`select payload from master_events where version_id = ${id} and kind = 'approved'`;
-    expect(e!.payload.source.changeControl.shown).toMatch(/QMS names no product: QA checked that it covers PRD-001$/);
+    expect(e!.payload.source.changeControl.shown).toMatch(/QMS names no product: QA checked that it covers API-001$/);
     const c = (products: string | null) => ({ number: 'CC', status: 'closed', title: null, qaApprovedAt: 'x', products });
     const prd = { productCode: 'FG-ATV20', productName: 'Atorvastatin calcium tablets 20 mg' };
     expect([c('fg-atv20, FG-ATV40'), c('ATORVASTATIN CALCIUM TABLETS 20 MG'), c('FG-ATV200'), c(' '), c(null)].map((x) => namesProduct(x, prd))).toEqual(['yes', 'yes', 'no', 'none', 'none']);
@@ -602,20 +604,20 @@ describe('the views TrueBatch publishes', () => {
 
   it('material_use_v1 publishes what was dispensed, for MMS to reduce the lot\'s stock: lot, material, net quantity; a correction shows the corrected quantity', async () => {
     const [u] = await t.owner<{ id: number }[]>`select id::int from users order by id limit 1`;
-    const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(tablet() as never)}, ${u!.id}) returning id::int`;
+    const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(api() as never)}, ${u!.id}) returning id::int`;
     const [b] = await t.owner<{ id: number }[]>`insert into batches (batch_no, master_version_id, issued_by) values ('MAT-USE-1', ${v!.id}, ${u!.id}) returning id::int`;
     const net = (value: string) => ({ ok: true, value, unit: 'kg', shown: `${value} kg` });
     const e = (step: number, kind: string, payload: object, at: string) => t.owner`insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id, at)
       values (${b!.id}, 1, 1, ${step}, 1, ${kind}, ${t.owner.json(payload as never)}, ${u!.id}, ${at})`;
-    // Granulation: weigh the API (signed, then its tare corrected) and the lactose (recorded, not signed: not dispensed yet).
+    // Step 1: condensation: weigh the API (signed, then its tare corrected) and the lactose (recorded, not signed: not dispensed yet).
     await e(0, 'started', {}, '2026-11-15 08:00+00');
     await e(0, 'value', { values: { lot: 'API-L1', gross: { value: '10.652', unit: 'kg' }, tare: { value: '0.500', unit: 'kg' } }, results: { net: net('10.152') } }, '2026-11-15 08:05+00');
     await e(0, 'done', {}, '2026-11-15 08:06+00');
     await e(1, 'value', { values: { lot: 'LAC-L1' }, results: { net: net('11.800') } }, '2026-11-15 08:10+00');
     const rows = async () => t.owner.unsafe(`select batch_number, lot_number, material_code, material_master_id, quantity::text, unit, dispensed_at, step, status
       from ${rep()}.material_use_v1 where batch_number = 'MAT-USE-1'`);
-    expect(await rows()).toEqual([{ batch_number: 'MAT-USE-1', lot_number: 'API-L1', material_code: 'MAT-001', material_master_id: 'mat-api', quantity: '10.152', unit: 'kg',
-      dispensed_at: new Date('2026-11-15T08:06:00Z'), step: 'granulation/weigh-api', status: 'dispensed' }]);
+    expect(await rows()).toEqual([{ batch_number: 'MAT-USE-1', lot_number: 'API-L1', material_code: 'MAT-001', material_master_id: 'mat-ksm', quantity: '10.152', unit: 'kg',
+      dispensed_at: new Date('2026-11-15T08:06:00Z'), step: 'step1/weigh-ksm', status: 'dispensed' }]);
     await e(0, 'corrected', { values: { tare: { value: '0.502', unit: 'kg' } }, results: { net: net('10.150') }, reason: 'Tare misread' }, '2026-11-15 08:20+00');
     expect(await rows()).toMatchObject([{ lot_number: 'API-L1', quantity: '10.150', status: 'corrected' }]);
     expect(await columns('material_use_v1')).toEqual(['batch_number text', 'lot_number text', 'material_code text', 'material_master_id text', 'quantity numeric', 'unit text',
@@ -624,31 +626,31 @@ describe('the views TrueBatch publishes', () => {
 
   it('material_use_v1 gives MMS the quantity in the material\'s unit in master data, read at signing: grams exactly in kg; without it, the step\'s unit', async () => {
     const [u] = await t.owner<{ id: number }[]>`select id::int from users order by id limit 1`;
-    const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(tablet() as never)}, ${u!.id}) returning id::int`;
+    const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(api() as never)}, ${u!.id}) returning id::int`;
     const [b] = await t.owner<{ id: number }[]>`insert into batches (batch_no, master_version_id, issued_by) values ('MAT-USE-2', ${v!.id}, ${u!.id}) returning id::int`;
     const e = (step: number, kind: string, payload: object) => t.owner`insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id)
       values (${b!.id}, 1, 1, ${step}, 1, ${kind}, ${t.owner.json(payload as never)}, ${u!.id})`;
-    await e(0, 'started', { where: 'Granulation › Weigh a material: Examplol' });
+    await e(0, 'started', { where: 'Step 1: condensation › Weigh a material: Examplol acid' });
     await e(0, 'value', { values: { lot: 'API-G1' }, results: { net: { ok: true, value: '600.5', unit: 'g', shown: '600.5 g' } } });
     await e(0, 'done', { stockUnit: 'kg' });
     await e(1, 'started', {});
     await e(1, 'value', { values: { lot: 'LAC-G1' }, results: { net: { ok: true, value: '12.5', unit: 'mg', shown: '12.5 mg' } } });
     await e(1, 'done', {});
     const rows = await t.owner.unsafe(`select lot_number, quantity::text, unit, step_name from ${rep()}.material_use_v1 where batch_number = 'MAT-USE-2' order by lot_number`);
-    expect(rows).toEqual([{ lot_number: 'API-G1', quantity: '0.6005', unit: 'kg', step_name: 'Granulation › Weigh a material: Examplol' },
-      { lot_number: 'LAC-G1', quantity: '12.5', unit: 'mg', step_name: 'Granulation › weigh-lactose' }]);
+    expect(rows).toEqual([{ lot_number: 'API-G1', quantity: '0.6005', unit: 'kg', step_name: 'Step 1: condensation › Weigh a material: Examplol acid' },
+      { lot_number: 'LAC-G1', quantity: '12.5', unit: 'mg', step_name: 'Step 1: condensation › weigh-amine' }]);
   });
 
   it('equipment_use_v1: one use per batch and machine or room, open across the stages of the batch that name it or may run in its room; another batch, another use; a balance, none', async () => {
     const [u] = await t.owner<{ id: number }[]>`select id::int from users order by id limit 1`;
-    // The binder preparation runs in RM-104; the granulation in the Granulation area, RM-104's area; the balance stands in dispensing.
-    const doc = tablet();
+    // The binder preparation runs in RM-104; the granulation in the Step 1: condensation area, RM-104's area; the balance stands in dispensing.
+    const doc = api();
     doc.stages[0]!.roomTypes = ['RM-104'];
-    doc.stages[1]!.roomTypes = ['Granulation'];
+    doc.stages[1]!.roomTypes = ['Step 1: condensation'];
     const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(doc as never)}, ${u!.id}) returning id::int`;
     const batch = async (no: string) => (await t.owner<{ id: number }[]>`insert into batches (batch_no, master_version_id, issued_by) values (${no}, ${v!.id}, ${u!.id}) returning id::int`)[0]!.id;
     const [b1, b2] = [await batch('EQ-USE-1'), await batch('EQ-USE-2')];
-    const room = { itemId: 'rm-104', code: 'RM-104', name: 'Granulation room 4', version: 1, type: 'Granulation', room: 'RM-104', area: 'Granulation' };
+    const room = { itemId: 'rm-104', code: 'RM-104', name: 'Step 1: condensation room 4', version: 1, type: 'Step 1: condensation', room: 'RM-104', area: 'Step 1: condensation' };
     const bal = { itemId: 'eq-bal', code: 'BAL-01', name: 'Balance', version: 1, type: 'Platform balance', room: 'DSP-01', area: 'Dispensing' };
     const e = (b: number, stage: number, sub: number, step: number, kind: string, payload: object, at: string) => t.owner`
       insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id, at)
@@ -658,13 +660,13 @@ describe('the views TrueBatch publishes', () => {
     const rows = (no: string) => t.owner.unsafe(`select equipment_code, step, step_name, started_at, ended_at from ${rep()}.equipment_use_v1
       where batch_number = $1 order by equipment_code`, [no]);
     const ends = async (no: string) => (await rows(no)).map((r) => [r.equipment_code, r.ended_at]);
-    await e(b1, 0, 1, 0, 'started', { where: 'Binder solution › Weigh a material: Povidone K30' }, '2026-11-15 08:00+00');
+    await e(b1, 0, 1, 0, 'started', { where: 'Base solution › Weigh a material: Sodium hydroxide' }, '2026-11-15 08:00+00');
     await e(b1, 0, 1, 0, 'value', { values: { room, balance: bal } }, '2026-11-15 08:01+00');
     await e(b1, 0, 1, 0, 'done', {}, '2026-11-15 08:05+00');
     // The balance the weighing names is no use (shared by the batches weighing on it); the room is, from the time it was
     // recorded on the step, not the step's start (whole-suite run, S17: a room refused until its cleaning was done).
     expect(await rows('EQ-USE-1')).toEqual([
-      { equipment_code: 'RM-104', step: 'binder/weigh-pvp', step_name: 'Binder solution › Weigh a material: Povidone K30', started_at: new Date('2026-11-15T08:01:00Z'), ended_at: null }]);
+      { equipment_code: 'RM-104', step: 'solution/weigh-naoh', step_name: 'Base solution › Weigh a material: Sodium hydroxide', started_at: new Date('2026-11-15T08:01:00Z'), ended_at: null }]);
     // The binder preparation closes: the granulation, still to run, may run in RM-104 (its area), so the room stays in use by the
     // batch, not dirty.
     await closed(b1, 0, '2026-11-15 08:30+00');
@@ -695,14 +697,14 @@ describe('the views TrueBatch publishes', () => {
   it('equipment_use_v1: a room or machine named only in line clearance steps was used by the stage: its step_name is the stage (17 Nov 2026 run, F3)', async () => {
     const [u] = await t.owner<{ id: number }[]>`select id::int from users order by id limit 1`;
     // Every stage starts with a line clearance (step 0); the binder preparation weighs in step 1.
-    const doc = placed(tablet());
+    const doc = placed(api());
     const [v] = await t.owner<{ id: number }[]>`insert into master_versions (version_no, doc, created_by) values (1, ${t.owner.json(doc as never)}, ${u!.id}) returning id::int`;
     const [b] = await t.owner<{ id: number }[]>`insert into batches (batch_no, master_version_id, issued_by) values ('EQ-USE-3', ${v!.id}, ${u!.id}) returning id::int`;
     const e = (stage: number, step: number, kind: string, payload: object, at: string) => t.owner`
       insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id, at)
       values (${b!.id}, ${stage}, 1, ${step}, 1, ${kind}, ${t.owner.json(payload as never)}, ${u!.id}, ${at})`;
-    const room = { itemId: 'rm-105', code: 'RM-105', name: 'Granulation room 5', version: 1, type: 'Binder solution', room: 'RM-105', area: 'Binder solution' };
-    const stirrer = { itemId: 'eq-str', code: 'STR-01', name: 'Stirrer', version: 1, type: 'stirrer', room: 'RM-105', area: 'Binder solution' };
+    const room = { itemId: 'rm-105', code: 'RM-105', name: 'Step 1: condensation room 5', version: 1, type: 'Base solution', room: 'RM-105', area: 'Base solution' };
+    const stirrer = { itemId: 'eq-str', code: 'STR-01', name: 'Stirrer', version: 1, type: 'stirrer', room: 'RM-105', area: 'Base solution' };
     // The room in the clearance of the binder stage only; the stirrer in its clearance and then in a process step.
     await e(0, 0, 'started', {}, '2026-11-16 08:00+00');
     await e(0, 0, 'value', { values: { room, machine: stirrer } }, '2026-11-16 08:01+00');

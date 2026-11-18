@@ -1,7 +1,6 @@
 // Pure helpers of the designer over the master document: keys, units and their kinds, what an input may be picked
 // from, scaling to a new batch size. No GMP maths here: numbers go through the templates library.
 import { BLOCKS, findBlock, type Block } from '../../../shared/blocks/index.js';
-import { product } from '../product.js';
 import { stepTitle as title } from '../../../shared/engine/batch.js';
 import { Dec, UNIT_LIST, type Kind } from '../../../shared/templates/index.js';
 import type { Stored } from '../../../shared/engine/index.js';
@@ -67,17 +66,13 @@ export function earlierRefs(doc: MasterDoc, si: number, ti: number): RefOption[]
 }
 
 export const HEADER_LABEL: Record<(typeof HEADER_VALUES)[number], { label: string; kind: Kind }> = {
-  batchSize: { label: 'the batch size (tablets)', kind: 'count' },
-  coreWeight: { label: 'the theoretical core tablet weight', kind: 'mass' },
-  coatedWeight: { label: 'the theoretical coated tablet weight', kind: 'mass' },
-  coreBatch: { label: 'the theoretical core batch weight', kind: 'mass' },
-  coatedBatch: { label: 'the theoretical coated batch weight', kind: 'mass' },
+  batchSize: { label: 'the batch size (kg of API expected)', kind: 'mass' },
 };
 
 export const stepTitle = (doc: MasterDoc, t: Step, j?: number) => `${j === undefined ? '' : `${j + 1}. `}${title(doc, t)}`;
 
 // Settings a new step starts with (the author may change them): the usual dispensing tolerance.
-const DEFAULT_SETTINGS: Record<string, Step['settings']> = { weigh: { tolerance: '0.5' }, lubricate: { tolerance: '0.5' } };
+const DEFAULT_SETTINGS: Record<string, Step['settings']> = { weigh: { tolerance: '0.5' } };
 /** A new step from a block, with its default instruction, signatures and settings. */
 export function stepFrom(block: Block, taken: string[]): Step {
   return { key: newKey(block.id, taken), block: { id: block.id, version: block.version }, settings: { ...DEFAULT_SETTINGS[block.id] }, checker: block.checker,
@@ -102,21 +97,25 @@ export function searchBlocks(q: string): Block[] {
 const QUANTITY = /^(\d+(?:\.(\d+))?)\s*(\S.*)$/;
 /** "Copy to a new batch size": typed quantities of mass or count in step settings scale with the batch size. */
 export function scaleDoc(doc: MasterDoc, batchSize: string): MasterDoc {
-  if (doc.header.batchSize === batchSize || !/^[1-9]\d*$/.test(batchSize)) return { ...doc, header: { ...doc.header, batchSize } };
+  if (doc.header.batchSize === batchSize || !/^\d+(\.\d+)?$/.test(batchSize) || !new Dec(batchSize).gt(0) || !new Dec(doc.header.batchSize).gt(0)) return { ...doc, header: { ...doc.header, batchSize } };
   const factor = new Dec(batchSize).div(doc.header.batchSize);
+  const times = (x: string) => new Dec(x).times(factor).toFixed((x.split('.')[1] ?? '').length, Dec.ROUND_HALF_UP);
   const scale = (v: SettingValue, kind: string | undefined): SettingValue => {
     const m = typeof v === 'string' && kind === 'quantity' ? QUANTITY.exec(v.trim()) : null;
     const k = m ? kindOfUnit(m[3]) : undefined;
-    if (!m || (k !== 'mass' && k !== 'count')) return v;
-    return `${new Dec(m[1]!).times(factor).toFixed(m[2]?.length ?? 0, Dec.ROUND_HALF_UP)} ${m[3]}`;
+    if (!m || (k !== 'mass' && k !== 'volume' && k !== 'count')) return v;
+    return `${times(m[1]!)} ${m[3]}`;
   };
+  // Quantities per batch scale; equivalents and quantities per kg of a key input follow the key input.
   return {
     ...doc,
     header: { ...doc.header, batchSize },
-    stages: doc.stages.map((s) => ({ ...s, steps: s.steps.map((t) => {
-      const b = findBlock(t.block);
-      return { ...t, settings: Object.fromEntries(Object.entries(t.settings).map(([n, v]) => [n, scale(v, b?.settings.find((x) => x.name === n)?.kind)])) };
-    }) })),
+    formula: doc.formula.map((l) => (l.quantity && (l.unit === 'kg' || l.unit === 'L') ? { ...l, quantity: times(l.quantity) } : l)),
+    stages: doc.stages.map((s) => ({ ...s, ...(s.produces?.expectedKg ? { produces: { ...s.produces, expectedKg: times(s.produces.expectedKg) } } : {}),
+      steps: s.steps.map((t) => {
+        const b = findBlock(t.block);
+        return { ...t, settings: Object.fromEntries(Object.entries(t.settings).map(([n, v]) => [n, scale(v, b?.settings.find((x) => x.name === n)?.kind)])) };
+      }) })),
   };
 }
 
@@ -186,7 +185,3 @@ export function dispensingRoomChoices(md: Pick<MasterData, 'rooms' | 'equipment'
     groups: [{ label: 'Rooms with a weighing balance', options: near }, { label: 'Other rooms', options: codes.filter((c) => !near.includes(c)) }] };
 }
 
-/** The products of master data this product makes: those whose dosage form names it (tablets), and none without one;
- *  of those, the bulk products (TrueBatch Tablets) or the packs (Packing), plus those master data gives no kind yet. */
-export const ownProducts = <P extends { dosageForm: string | null; kind?: 'bulk' | 'pack' | null }>(products: readonly P[], kind: 'bulk' | 'pack'): P[] =>
-  products.filter((p) => p.dosageForm?.toLowerCase().includes(product.dosageForm) && (p.kind ?? kind) === kind);

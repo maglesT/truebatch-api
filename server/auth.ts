@@ -14,7 +14,7 @@ export const PERMISSIONS = {
   'truebatch_api.batch.check': 'Check steps performed by another person (second person)',
   'truebatch_api.batch.supervise': 'Production approval of a completed batch record',
   'truebatch_api.qc.approve': 'QC approval of the results used for release',
-  'truebatch_api.qa.release': 'QA review and release of filled, inspected units',
+  'truebatch_api.qa.release': 'QA review and release of packed, labelled API batches',
   'truebatch_api.view': 'View batch records and master versions',
   'truebatch_api.demo.skip': 'Skip a running wait (demo installations only)',
 } as const;

@@ -4,13 +4,13 @@ import { blockProblems, type Block } from '../shared/blocks/format.js';
 import { evaluate } from '../shared/engine/index.js';
 import { blocking, masterChecks } from '../shared/master/checks.js';
 import { masterSchema, type MasterDoc } from '../shared/master/schema.js';
-import { placed, tablet, unplaced } from './engine-fixture.js';
+import { placed, api, unplaced } from './engine-fixture.js';
 // The problems, without the rooms a stage must name (TA-11): the fixtures name none.
 const checks = (d: Parameters<typeof masterChecks>[0]) => unplaced(masterChecks(d));
 
 /** The fixture with one change; the problems that change makes. */
 function after(change: (d: MasterDoc) => void) {
-  const d = tablet();
+  const d = api();
   change(d);
   return checks(d).map((p) => `${p.level} ${p.rule ?? '-'} ${p.path}: ${p.message}`);
 }
@@ -35,53 +35,62 @@ describe('blocks are data', () => {
 });
 
 describe('master checks', () => {
-  it('the fixture tablet master passes every check', () => {
-    expect(checks(tablet())).toEqual([]);
-    expect(masterChecks(placed(tablet()))).toEqual([]);
+  it('the fixture API master passes every check', () => {
+    expect(checks(api())).toEqual([]);
+    expect(masterChecks(placed(api()))).toEqual([]);
   });
 
   it('TA-11 a stage that works machines or names a room, with no rooms chosen, is an error; balances alone are not', () => {
-    expect(masterChecks(tablet()).filter((p) => p.rule === 'TA-11').map((p) => `${p.path}: ${p.message}`)).toEqual(['Binder solution', 'Granulation', 'Compression', 'Coating']
+    expect(masterChecks(api()).filter((p) => p.rule === 'TA-11').map((p) => `${p.path}: ${p.message}`)).toEqual(['Base solution', 'Step 1: condensation', 'Step 2: salt formation', 'Drying']
       .map((name, i) => `stages[${i}].roomTypes: Stage ${name}: choose the rooms this stage may run in (an area or a room of master data, in the stage settings)`));
-    const d = placed(tablet());
+    const d = placed(api());
     d.stages[0]!.roomTypes = [];
     d.stages[0]!.steps = d.stages[0]!.steps.filter((t) => t.block.id === 'weigh');
     expect(masterChecks(d).filter((p) => p.rule === 'TA-11')).toEqual([]);
   });
 
   it('a draft may be incomplete, but its shape is checked', () => {
-    expect(masterSchema.safeParse({ ...tablet(), stages: [{ key: 'X Y' }] }).success).toBe(false);
+    expect(masterSchema.safeParse({ ...api(), stages: [{ key: 'X Y' }] }).success).toBe(false);
   });
 
   it.each<[string, (d: MasterDoc) => void, string]>([
-    ['weighing', (d) => { step(d, 'granulation', 'weigh-api').checker = false; }, 'error TA-08 stages[1].steps[0]: A weighing step needs a second-person check'],
-    ['charge-in', (d) => { step(d, 'granulation', 'charge-api').checker = false; }, 'error TA-08 stages[1].steps[2]: A charge-in step needs a second-person check'],
-    ['yield', (d) => { step(d, 'compression', 'yield').checker = false; }, 'error TA-08 stages[2].steps[1]: A yield step needs a second-person check'],
-    ['critical', (d) => { step(d, 'granulation', 'granulate').critical = true; }, 'error TA-08 stages[1].steps[3]: A critical step needs a second-person check'],
+    ['weighing', (d) => { step(d, 'step1', 'weigh-ksm').checker = false; }, 'error TA-08 stages[1].steps[0]: A weighing step needs a second-person check'],
+    ['charge-in', (d) => { step(d, 'step1', 'charge-ksm').checker = false; }, 'error TA-08 stages[1].steps[2]: A charge-in step needs a second-person check'],
+    ['yield', (d) => { step(d, 'salt', 'yield').checker = false; }, 'error TA-08 stages[2].steps[1]: A yield step needs a second-person check'],
+    ['critical', (d) => { step(d, 'step1', 'react').critical = true; }, 'error TA-08 stages[1].steps[3]: A critical step needs a second-person check'],
   ])('TA-08 a %s step without a second-person check is an error', (_what, change, want) => {
     expect(after(change)).toEqual([want]);
   });
 
   it('TA-10 a stage worked in a room without a line clearance step is an error; line clearance not first is a warning', () => {
-    expect(after((d) => { d.stages[2]!.roomTypes = ['Compression']; })).toEqual(['error TA-10 stages[2]: Stage Compression is worked in a room but has no line clearance step']);
+    expect(after((d) => { d.stages[2]!.roomTypes = ['Step 2: salt formation']; })).toEqual(['error TA-10 stages[2]: Stage Step 2: salt formation is worked in a room but has no line clearance step']);
     const clearance = { key: 'line-clearance', block: { id: 'line-clearance', version: 1 }, checker: true, waitForCheck: false, critical: false, settings: {}, flow: { kind: 'none' as const } };
-    expect(after((d) => { d.stages[2]!.roomTypes = ['Compression']; d.stages[2]!.steps.unshift(clearance); })).toEqual([]);
-    expect(after((d) => { d.stages[2]!.steps.push(clearance); })).toEqual(['warning - stages[2].steps[2]: Line clearance is not the first step of Compression']);
+    expect(after((d) => { d.stages[2]!.roomTypes = ['Step 2: salt formation']; d.stages[2]!.steps.unshift(clearance); })).toEqual([]);
+    expect(after((d) => { d.stages[2]!.steps.push(clearance); })).toEqual(['warning - stages[2].steps[2]: Line clearance is not the first step of Step 2: salt formation']);
     expect(after((d) => { d.stages[2]!.steps.unshift({ ...clearance, checker: false }); }))
       .toEqual(['error TA-08 stages[2].steps[0]: A line clearance step needs a second-person check']);
   });
 
   it('TA-01 an intermediate without a hold time is an error', () => {
-    expect(after((d) => { delete d.stages[1]!.produces!.holdHours; })).toEqual(['error TA-01 stages[1].produces: The intermediate dried granules has no hold time']);
+    expect(after((d) => { delete d.stages[1]!.produces!.holdHours; })).toEqual(['error TA-01 stages[1].produces: The intermediate intermediate 1 has no hold time']);
   });
 
   it('a stage without a yield step is an error (a preparation needs none)', () => {
-    expect(after((d) => { d.stages[2]!.steps.pop(); })).toEqual(['error - stages[2]: Stage Compression has no yield step']);
+    expect(after((d) => { d.stages[2]!.steps.pop(); })).toEqual(['error - stages[2]: Stage Step 2: salt formation has no yield step']);
   });
 
-  it('the formula must add up to the theoretical core weight (coating and solvents left out)', () => {
-    expect(after((d) => { d.formula[4]!.mgPerTablet = '17.0'; })).toEqual(['error - formula: The core materials add up to 249.5 mg per tablet, not the theoretical core weight 250.0 mg']);
-    expect(after((d) => { d.formula[3]!.mgPerTablet = '80.0'; d.formula[6]!.mgPerTablet = '9.0'; d.header.coatedWeightMg = '259.0'; })).toEqual([]);
+  it('TA-01 the formula: each line in a stage, a quantity or equivalents, its molecular weight and density where needed, one starting material per stage', () => {
+    expect(after((d) => { d.formula[2]!.stage = 'nowhere'; })).toEqual(['error TA-01 formula[2].stage: Sodium hydroxide is charged in no stage of this master']);
+    expect(after((d) => { d.formula[1]!.quantity = '50.0'; })).toEqual(['error TA-01 formula[1]: Exampline: give its quantity or its equivalents (one of them)']);
+    expect(after((d) => { delete d.formula[1]!.eq; })).toEqual(['error TA-01 formula[1]: Exampline: give its quantity or its equivalents (one of them)']);
+    expect(errors((d) => { delete d.formula[1]!.mw; })).toEqual(['error TA-13 formula[1].mw: Exampline is charged by equivalents: give its molecular weight (g/mol)']);
+    expect(errors((d) => { delete d.formula[5]!.density; })).toContain('error TA-13 formula[5].density: Hydrochloric acid 35 % is charged by equivalents as a volume: give its density (kg/L)');
+    expect(errors((d) => { d.formula[1]!.role = 'starting material'; })).toEqual(['error TA-01 stages[1]: Stage Step 1: condensation has 2 starting materials: one is the key input of the stage; the others are reagents',
+      'error TA-01 formula[1]: The starting material Exampline is the key input of its stage: give its quantity in kg']);
+    // A quantity per kg in a stage with no key input (the base solution uses no intermediate and has no starting material).
+    expect(after((d) => { d.formula[3]!.unit = 'L/kg'; })).toEqual([expect.stringMatching(/^error TA-13 formula\[3\]: Purified water is charged per kg or by equivalents of the key input, but its stage has no key input/)]);
+    // The intermediate a later stage works on needs its molecular weight for equivalents.
+    expect(errors((d) => { delete d.stages[1]!.produces!.mw; })).toEqual(expect.arrayContaining(['error TA-13 formula[5]: Hydrochloric acid 35 % is charged by equivalents of intermediate 1: give the molecular weight of intermediate 1']));
   });
 
   it('TA-13 adjustment settings the templates library refuses are errors (same basis, overage, salt factor)', () => {
@@ -91,65 +100,63 @@ describe('master checks', () => {
     expect(after((d) => { d.formula[0]!.adjust = { potency: { basis: 'as is' } }; }))
       .toEqual(['error TA-13 formula[0].adjust: Say whether the standard quantity is the anhydrous weight or the hydrate/solvate weight (same-basis rule C5)']);
     expect(after((d) => { d.formula[0]!.adjust = { overage: { percent: '5.0', maxPercent: '3.0' } }; }))
-      .toEqual(['error - formula[0].adjust: The overage 5.0 % is above the 3.0 % the master allows']);
+      .toEqual(['error TA-13 formula[0].adjust: The overage 5.0 % is above the 3.0 % the master allows']);
     expect(errors((d) => { d.formula[0]!.adjust = { salt: { from: { name: 'base', mw: '383.4' }, to: { name: 'hemifumarate', mw: '0' } } }; }))
-      .toEqual(['error - formula[0].adjust: Molecular weights must be more than zero']);
-    expect(after((d) => { d.formula[1]!.adjust = { compensates: ['nothing'] }; })).toEqual(['error - formula[1].adjust.compensates: No other formula line nothing to compensate']);
+      .toEqual(['error TA-13 formula[0].adjust: Molecular weights must be more than zero']);
   });
 
   it('a limit the library refuses is an error', () => {
-    expect(after((d) => { step(d, 'granulation', 'granulate').settings.endPointLimit = { low: '12.0', high: '8.0', unit: 'kW' }; }))
-      .toEqual(['error - stages[1].steps[3].settings.endPointLimit: The lower limit 12.0 is above the upper limit 8.0']);
+    expect(after((d) => { step(d, 'step1', 'react').settings.temperatureLimit = { low: '85', high: '75', unit: '°C' }; }))
+      .toEqual(['error - stages[1].steps[3].settings.temperatureLimit: The lower limit 85 is above the upper limit 75']);
   });
 
   it('TA-01 a limit or a typed target in a unit of another kind than the value it checks is an error (every reading would be refused)', () => {
-    expect(errors((d) => { step(d, 'compression', 'compress').settings.meanLimit = { low: '245.0', high: '255.0', unit: 'min' }; }))
-      .toEqual(['error TA-01 stages[2].steps[0].settings.meanLimit: Mean weight limits: min is a time, but the value checked is a mass. Choose a unit of that kind (in min every reading would be refused at batch time)']);
-    expect(errors((d) => { step(d, 'coating', 'qa-hold').settings = { what: 'Weight', unit: 'mg', limit: { low: '95', high: '105', unit: '%' } }; }))
+    expect(errors((d) => { step(d, 'salt', 'crystallise').settings.temperatureLimit = { low: '0', high: '10', unit: 'min' }; }))
+      .toEqual([expect.stringMatching(/^error TA-01 stages\[2\]\.steps\[0\]\.settings\.temperatureLimit: Temperature limits: min is a time, but the value checked is a temperature/)]);
+    expect(errors((d) => { step(d, 'drying', 'qa-hold').settings = { what: 'Weight', unit: 'mg', limit: { low: '95', high: '105', unit: '%' } }; }))
       .toEqual(['error TA-01 stages[3].steps[1].settings.limit: Limits: % is a percentage, but the value checked is a mass. Choose a unit of that kind (in % every reading would be refused at batch time)']);
-    expect(errors((d) => { step(d, 'granulation', 'yield').settings.yieldLimit = { low: '97.0', high: '100.5', unit: 'kg' }; })).toHaveLength(1);
-    expect(errors((d) => { step(d, 'granulation', 'weigh-lactose').settings.target = '12.0 min'; })).toEqual([expect.stringMatching(/^error TA-01 stages\[1\]\.steps\[1\]\.settings\.target: .*min is a time, but the value checked is a mass/)]);
-    // A unit not in the list is refused as before; a unit of the same kind, or °C on a temperature difference, is not a kind problem.
-    expect(errors((d) => { step(d, 'compression', 'compress').settings.meanLimit = { low: '245.0', high: '255.0', unit: 'F-min' }; })).toEqual([expect.stringMatching(/"F-min" is not in the unit list/)]);
-    expect(errors((d) => { Object.assign(step(d, 'compression', 'compress').settings, { meanLimit: { low: '0.245', high: '0.255', unit: 'g' }, hardnessLimit: { low: '6', high: '12', unit: 'kp' } }); })).toEqual([]);
-    expect(errors((d) => { step(d, 'granulation', 'weigh-lactose').settings.target = '12.0 kg'; })).toEqual([]);
+    expect(errors((d) => { step(d, 'step1', 'yield').settings.yieldLimit = { low: '97.0', high: '100.5', unit: 'kg' }; })).toHaveLength(1);
+    expect(errors((d) => { step(d, 'step1', 'weigh-amine').settings.target = '12.0 min'; })).toEqual([expect.stringMatching(/^error TA-01 stages\[1\]\.steps\[1\]\.settings\.target: .*min is a time, but the value checked is a mass/)]);
+    // A unit not in the list is refused as before; a unit of the same kind is not a kind problem.
+    expect(errors((d) => { step(d, 'salt', 'crystallise').settings.temperatureLimit = { low: '0', high: '10', unit: 'F-min' }; })).toEqual([expect.stringMatching(/"F-min" is not in the unit list/)]);
+    expect(errors((d) => { step(d, 'salt', 'crystallise').settings.temperatureLimit = { low: '273', high: '283', unit: 'K' }; })).toEqual([]);
+    expect(errors((d) => { step(d, 'step1', 'weigh-amine').settings.target = '66.0 kg'; })).toEqual([]);
   });
 
-  it('a limit of the wrong unit kind is refused at batch time too: C1 and T7 refuse the reading, nothing is compared', () => {
-    const d = tablet();
-    step(d, 'compression', 'compress').settings.meanLimit = { low: '245.0', high: '255.0', unit: 'min' };
-    const r = evaluate(d, [], { stage: 2, sub: 1, step: 0, round: 1 }, { weights: Array(20).fill({ value: '250.0', unit: 'mg' }) });
-    expect(r.meanWeight).toEqual({ ok: false, message: 'mg (mass) cannot be converted to min (time)' });
+  it('a limit of the wrong unit kind is refused at batch time too: C1 refuses the reading, nothing is compared', () => {
+    const d = api();
+    step(d, 'salt', 'crystallise').settings.temperatureLimit = { low: '0', high: '10', unit: 'min' };
+    const r = evaluate(d, [], { stage: 2, sub: 1, step: 0, round: 1 }, { temperature: { value: '5', unit: '°C' } });
+    expect(r.temperatureCheck).toMatchObject({ ok: false });
   });
 
-  it('TA-15 compression checks more than 30 minutes apart, or with no interval, are an error', () => {
-    expect(after((d) => { step(d, 'compression', 'compress').everyMinutes = 45; }))
-      .toEqual(['error TA-15 stages[2].steps[0].everyMinutes: Periodic checks every 45 min: they must be at least every 30 min']);
-    expect(after((d) => { delete step(d, 'compression', 'compress').everyMinutes; }))
-      .toEqual(['error TA-15 stages[2].steps[0].everyMinutes: Compress with periodic checks needs the interval of its periodic checks']);
-    expect(after((d) => { step(d, 'compression', 'compress').everyMinutes = 30; })).toEqual([]);
+  it('readings at an interval: a process to an end point needs its interval, at most every 480 minutes', () => {
+    expect(after((d) => { step(d, 'salt', 'crystallise').everyMinutes = 600; }))
+      .toEqual(['error TA-15 stages[2].steps[0].everyMinutes: Periodic checks every 600 min: they must be at least every 480 min']);
+    expect(after((d) => { delete step(d, 'salt', 'crystallise').everyMinutes; }))
+      .toEqual(['error TA-15 stages[2].steps[0].everyMinutes: Process to an end point needs the interval of its periodic checks']);
+    expect(after((d) => { step(d, 'salt', 'crystallise').everyMinutes = 480; })).toEqual([]);
   });
 
   it('a repeat-until step without the most rounds, or without a stop check, is an error', () => {
-    expect(after((d) => { step(d, 'granulation', 'dry').flow = { kind: 'repeat-until' }; }))
+    expect(after((d) => { step(d, 'step1', 'dry').flow = { kind: 'repeat-until' }; }))
       .toEqual(['error - stages[1].steps[4].flow: A repeat-until step needs the most rounds allowed']);
-    expect(after((d) => { step(d, 'granulation', 'dry').flow = { kind: 'repeat-until', maxRounds: 3, stop: 'nothing' }; }))
+    expect(after((d) => { step(d, 'step1', 'dry').flow = { kind: 'repeat-until', maxRounds: 3, stop: 'nothing' }; }))
       .toEqual(['error - stages[1].steps[4].flow: A repeat-until step needs a stop check (a calculation of its block)']);
   });
 
   it('a reference to a field that does not exist, comes later, or is inside another sub-batch stage is an error', () => {
-    const coat = (ref: string) => after((d) => { step(d, 'coating', 'coat').settings.coreWeight = { ref }; });
-    expect(coat('compression/compress/nothing')).toEqual(['error - stages[3].steps[0].settings.coreWeight: compression/compress/nothing: step compress has no field or calculation nothing']);
-    expect(coat('coating/yield/yield')).toEqual(['error - stages[3].steps[0].settings.coreWeight: coating/yield/yield comes later than this step']);
-    expect(coat('nowhere/x/y')).toEqual(['error - stages[3].steps[0].settings.coreWeight: nowhere/x/y: no such stage and step']);
-    expect(after((d) => { step(d, 'compression', 'yield').settings.theoretical = { ref: 'coating/coat/gain' }; }))
-      .toEqual(['error - stages[2].steps[1].settings.theoretical: coating/coat/gain comes later than this step']);
+    const ref = (r: string) => after((d) => { step(d, 'salt', 'yield').settings.theoretical = { ref: r }; });
+    expect(ref('step1/yield/nothing')).toEqual(['error - stages[2].steps[1].settings.theoretical: step1/yield/nothing: step yield has no field or calculation nothing']);
+    expect(ref('drying/yield/output')).toEqual(['error - stages[2].steps[1].settings.theoretical: drying/yield/output comes later than this step']);
+    expect(ref('nowhere/x/y')).toEqual(['error - stages[2].steps[1].settings.theoretical: nowhere/x/y: no such stage and step']);
+    expect(ref('step1/yield/output')).toEqual([]);
   });
 
   it('unknown blocks, missing settings and stages used before they exist are errors; an unused preparation is a warning', () => {
-    expect(after((d) => { step(d, 'granulation', 'mill').block.version = 9; })).toEqual(['error - stages[1].steps[5].block: No block sieve version 9']);
-    expect(after((d) => { delete step(d, 'granulation', 'dry').settings.lodLimit; })).toEqual(['error - stages[1].steps[4].settings.lodLimit: LOD limit is not set']);
-    expect(after((d) => { d.stages[1]!.uses = ['coating']; })).toEqual(['warning - stages[0]: No stage uses the preparation Binder solution', 'error - stages[1].uses: coating is not an earlier stage']);
+    expect(after((d) => { step(d, 'step1', 'mill').block.version = 9; })).toEqual(['error - stages[1].steps[5].block: No block sieve version 9']);
+    expect(after((d) => { delete step(d, 'step1', 'dry').settings.lodLimit; })).toEqual(['error - stages[1].steps[4].settings.lodLimit: LOD limit is not set']);
+    expect(after((d) => { d.stages[1]!.uses = ['drying']; })).toEqual(['warning - stages[0]: No stage uses the preparation Base solution', 'error - stages[1].uses: drying is not an earlier stage']);
   });
 });
 
@@ -182,57 +189,20 @@ describe('calculation checks', () => {
     expect(errors(fixed)).toEqual([]);
   });
 
-  it('calculation check ⛔ negative filler: a compensating filler that cannot take the overage even at an assay of 100 %', () => {
-    const mccCompensates = (overage: string) => (d: MasterDoc) => { d.formula[0]!.adjust = { ...d.formula[0]!.adjust, overage: { percent: overage } }; d.formula[4]!.adjust = { compensates: ['api'] }; };
-    // 100 000 tablets: 10.000 kg API × 1.20 = 12.000 kg; 2.000 kg more than the 1.750 kg of MCC
-    expect(only('error', 'formula[4].adjust.compensates')(mccCompensates('20.0')))
-      .toEqual([expect.stringMatching(/^error TA-13 formula\[4\]\.adjust\.compensates: At the nominal certificate values: Not enough Microcrystalline cellulose to compensate.*-0\.250 kg of Microcrystalline cellulose\. The batch weight cannot be kept$/)]);
-    expect(only('error', 'formula[4].adjust.compensates')(mccCompensates('10.0'))).toEqual([]);
-  });
-
-  it('calculation check ⛔ weight variation on coated tablets other than film-coated: the block offers no other coating, and T14 refuses it', () => {
-    const uniformity = (coating: string): Change => (d) => {
-      d.stages[2]!.steps.splice(1, 0, { key: 'uniformity', block: { id: 'uniformity-by-weight', version: 1 }, checker: true, waitForCheck: false, critical: false,
-        settings: { coating, labelClaim: '100 mg' }, flow: { kind: 'none' } });
-    };
-    expect(errors(uniformity('sugar-coated'))).toEqual(['error - stages[2].steps[1].settings.coating: Coating: choose one of uncoated, film-coated']);
-    expect(errors(uniformity('film-coated'))).toEqual([]);
-    const d = tablet();
-    uniformity('sugar-coated')(d);
-    const weights = Array.from({ length: 10 }, () => ({ value: '250.0', unit: 'mg' }));
-    expect(evaluate(d, [], { stage: 2, sub: 1, step: 1, round: 1 }, { weights, assay: { value: '99.0', unit: '%' } }).acceptance)
-      .toEqual({ ok: false, message: 'The weight-variation method is not allowed for sugar-coated tablets: only uncoated and film-coated tablets may use it. Test content uniformity on individual units' });
-  });
-
-  it('calculation check ⛔ a liquid make-up the templates refuse is shown on its step before any batch (T17)', () => {
-    const solution = (targetSolids: string): Change => (d) => {
-      d.stages[0]!.steps[1] = { key: 'stir', block: { id: 'binder-solution', version: 1 }, checker: true, waitForCheck: false, critical: false, flow: { kind: 'none' },
-        settings: { binder: { formula: 'pvp' }, targetSolids, tolerance: '1.0', mixTimeLimit: { low: '10', high: '20', unit: 'min' } } };
-    };
-    expect(errors(solution('0 %'))).toEqual(['error - stages[0].steps[1]: Solvent to add: The target solids content must be more than 0 and not more than 100 %']);
-    expect(errors(solution('10 %'))).toEqual([]);
-  });
-
-  const hcl: Change = (d) => { d.formula[0]!.name = 'Examplol hydrochloride'; };
-  const herbal: Change = (d) => { d.formula[4]!.name = 'Withania root extract'; };
-  const premix: Change = (d) => { step(d, 'granulation', 'charge-api').instruction = 'Premix with lactose 1:4, then charge.'; };
-  const double: Change = (d) => { d.formula[4]!.adjust = { content: { formulaQuantityIs: 'dry', contentSource: 'in-process result' } }; };
+  const wet: Change = (d) => { d.formula[0]!.name = 'Examplol acid wet cake'; delete d.formula[0]!.adjust; };
   // 405.4 ÷ 383.4 = 1.0574: 1.10 is 4.0 % off, 1.060 is 0.2 % off
   const factor = (f: string): Change => (d) => { d.formula[0]!.adjust = { salt: { from: { name: 'base', mw: '383.4' }, to: { name: 'sodium', mw: '405.4' }, factor: f } }; };
   it.each<[string, Change, Change, string, string, string]>([
-    ['(a) label basis per market', hcl, () => {}, 'label-basis/api', 'formula[0]', 'as Examplol hydrochloride'],
-    ['(b) herbal or extract line', herbal, () => {}, 'herbal/mcc', 'formula[4]', 'extract weight'],
-    ['(c) ratio in a step instruction with the API', premix, (d) => { step(d, 'granulation', 'mill').instruction = 'Mill 10 % of the granules first.'; }, 'ratio-basis/granulation/charge-api', 'stages[1].steps[2]', 'as weighed'],
-    ['(d) potency adjusted at dispensing and again from a blend assay', double, (d) => { delete d.formula[0]!.adjust; double(d); }, 'double-adjustment/mcc', 'formula[4].adjust', 'intended'],
-    ['(e) salt factor differing from the molecular weights by more than 0.5 %', factor('1.10'), factor('1.060'), 'salt-factor/api', 'formula[0].adjust.salt', 'confirmed'],
+    ['solvent-wet starting material weighed as dry', wet, (d) => { d.formula[0]!.name = 'Examplol acid wet cake'; }, 'solvent-wet/ksm', 'formula[0]', 'weighed dry'],
+    ['(e) salt factor differing from the molecular weights by more than 0.5 %', factor('1.10'), factor('1.060'), 'salt-factor/ksm', 'formula[0].adjust.salt', 'confirmed'],
   ])('calculation check ⚠️ %s: fires, passes, and once answered no longer blocks', (_what, fires, passes, key, path, choice) => {
-    const d = tablet();
+    const d = api();
     fires(d);
     const q = checks(d).find((p) => p.question?.key === key)!;
     expect(q).toMatchObject({ level: 'warning', path, question: { options: expect.arrayContaining([choice]) } });
     expect(blocking(q)).toBe(true);
     // passes: the warning is not there
-    const ok = tablet();
+    const ok = api();
     passes(ok);
     expect(checks(ok).some((p) => p.question?.key === key)).toBe(false);
     // answered (with a reason where one is needed): shown as answered, not blocking
@@ -243,10 +213,10 @@ describe('calculation checks', () => {
   });
 
   it('calculation check ⚠️ an answer counts only while it fits: a choice from the list, a reason where needed, the warning as answered', () => {
-    const d = tablet();
-    double(d);
-    const q = checks(d).find((p) => p.question?.key === 'double-adjustment/mcc')!;
-    const answer = (a: object) => { d.answers = { 'double-adjustment/mcc': { about: q.message, choice: 'intended', reason: 'Validated', ...a } }; return checks(d).find((p) => p.question?.key === 'double-adjustment/mcc')!; };
+    const d = api();
+    wet(d);
+    const q = checks(d).find((p) => p.question?.key === 'solvent-wet/ksm')!;
+    const answer = (a: object) => { d.answers = { 'solvent-wet/ksm': { about: q.message, choice: 'weighed dry', reason: 'Dried before dispensing', ...a } }; return checks(d).find((p) => p.question?.key === 'solvent-wet/ksm')!; };
     expect(blocking(answer({}))).toBe(false);
     expect(blocking(answer({ reason: ' ' }))).toBe(true);
     expect(blocking(answer({ choice: 'maybe' }))).toBe(true);
@@ -255,10 +225,9 @@ describe('calculation checks', () => {
 });
 
 it('calculation check ⚠️ the messages say what to answer, in plain words', () => {
-  const d = tablet();
+  const d = api();
   d.formula[0]!.adjust = { salt: { from: { name: 'base', mw: '383.4' }, to: { name: 'sodium', mw: '405.4' }, factor: '1.10' } };
   expect(checks(d).map((p) => `${p.path}: ${p.message}`)).toEqual([
-    "formula[0]: Label claim for this master's market: is the strength of Examplol stated as base or as sodium? The formula gives 100.0 mg of base per tablet.",
-    'formula[0].adjust.salt: The salt factor 1.10 written for Examplol differs by 4.0 % from the molecular weights of base and sodium (factor 1.0574), which the batch quantity uses. Confirm with a reason, or correct the factor or the molecular weights.',
+    'formula[0].adjust.salt: The salt factor 1.10 written for Examplol acid differs by 4.0 % from the molecular weights of base and sodium (factor 1.0574), which the batch quantity uses. Confirm with a reason, or correct the factor or the molecular weights.',
   ]);
 });

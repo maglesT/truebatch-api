@@ -32,7 +32,7 @@ const CFM = d('28316.846592').times(60); // mL/h: 1 ft³ = 28 316.846592 mL exac
 
 // symbol, kind, factor (to base), offset — base unit of each kind is the one with factor 1.
 const TABLE: [string, Kind, Dec | string, string?][] = [
-  ['', 'number', '1'],
+  ['', 'number', '1'], ['pH', 'number', '1'],
   ['units', 'count', '1'], ['tablets', 'count', '1'], ['packs', 'count', '1'], ['nos', 'count', '1'], // nos: pieces, as master data counts them
   ['µg', 'mass', '0.000001'], ['mg', 'mass', '0.001'], ['g', 'mass', '1'], ['kg', 'mass', '1000'],
   ['mm³', 'volume', '0.001'], ['µL', 'volume', '0.001'], ['mL', 'volume', '1'], ['L', 'volume', '1000'], ['m³', 'volume', '1000000'],

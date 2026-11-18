@@ -5,7 +5,7 @@ export const mix: Block = {
   id: 'mix', version: 1, name: 'Mix for a time', checker: false,
   instruction: 'Mix at the speed shown for at least the time shown.',
   fields: [
-    { name: 'machine', label: 'Mixer', kind: 'machine', types: ['mix', 'stirrer', 'blend', 'vessel'] },
+    { name: 'machine', label: 'Reactor, vessel or mixer', kind: 'machine', types: ['reactor', 'vessel', 'mix', 'stirrer', 'blend'] },
     { name: 'speed', label: 'Speed', kind: 'number', unit: 'rpm' },
   ],
   settings: [{ name: 'speedLimit', label: 'Speed limits', kind: 'limit', optional: true }],

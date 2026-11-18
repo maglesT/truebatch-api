@@ -4,7 +4,7 @@
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces.js';
 import { findBlock, type Block } from '../shared/blocks/index.js';
 import { materialLines, type Step } from '../shared/master/schema.js';
-import { batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, trainingOf, trainingText, trainingTyped, skillText, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
+import { formulaText, batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, trainingOf, trainingText, trainingTyped, skillText, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
 import type { LoadedBatch } from './routes/batches.js';
 import { pageFrame, plant, runs } from './pdf.js';
 import { plantText } from '../shared/plant-time.js';
@@ -42,8 +42,6 @@ export function valueText(v: Value | undefined, stockUnit?: string): string {
 /** The value at the end of a worked line ("… = 10.152 kg"). */
 const endOf = (r: Stored) => (r.ok ? (/=\s*([^=;]+)$/.exec(r.shown)?.[1]?.trim() ?? `${r.value} ${r.unit}`) : '');
 // A formula line's role and place in words, never their keys (owner, 17 Nov 2026).
-const ROLE: Record<string, string> = { api: 'API', excipient: 'Excipient', solvent: 'Solvent' };
-const PLACE: Record<string, string> = { intragranular: 'intragranular', extragranular: 'extragranular', binder: 'binder solution', coating: 'coating' };
 const checksOf = (r: Stored) => (r.ok ? Object.entries(r).filter(([k, v]) => /check$/i.test(k) && v && typeof v === 'object') as [string, { pass: boolean; shown: string }][] : []);
 
 const small = (text: string, extra: Record<string, unknown> = {}): Content => ({ text: runs(text), fontSize: 7.5, ...extra }) as Content;
@@ -85,7 +83,7 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
     { text: runs(`${h.productCode} · ${h.productName}`), fontSize: 11, margin: [0, 2, 0, 8] },
     { table: { widths: [90, '*', 90, '*', 90, '*'], body: [
       [th('Product'), small(`${h.productCode} · ${h.productName}`), th('Batch no.'), small(r.batch.batchNo, { bold: true }), th('Status'), small(statusWords(view.status, true), { bold: true })],
-      [th('Batch size'), small(`${Number(h.batchSize).toLocaleString('en-IN')} tablets`), th('Core tablet weight'), small(`${h.coreWeightMg} mg${h.coatedWeightMg ? ` (coated ${h.coatedWeightMg} mg)` : ''}`), th('Master version'), small(`version ${r.versionNo}`)],
+      [th('Batch size'), small(`${h.batchSize} kg of API expected`), th('Retest period'), small(`${h.retestMonths} months from the date of manufacture`), th('Master version'), small(`version ${r.versionNo}`)],
       [th('Issued'), small(`${r.issuedByName}, ${plant(r.batch.issuedAt)}`), th('Times'), small('plant time (IST)'), th('Changed values'), small('marked CHANGED; the original is struck through, with the reason', { color: RED })],
     ] }, layout: 'lightHorizontalLines' },
     ...(endedText ? [small(endedText, { bold: true, color: RED, margin: [0, 6, 0, 0] })] : []),
@@ -93,15 +91,14 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
 
   // The formula, with the lots and the quantities dispensed (the weighing steps that name the line).
   content.push(heading('Formula'));
-  content.push(table([150, 90, 55, 80, '*'], ['Material', 'Role · place', 'mg per tablet', 'Batch quantity', 'Lots and dispensed quantities'], doc.formula.map((l) => {
+  content.push(table([150, 90, 70, 80, '*'], ['Material', 'Stage · role', 'Formula', 'Batch quantity', 'Lots and dispensed quantities'], doc.formula.map((l) => {
     const q = lineQuantity(doc, [], { stage: 0, sub: 1, step: 0, round: 1 }, l, false, {});
     const weighed = steps.filter((v) => Object.values(stepOf(v).settings).some((s) => typeof s === 'object' && 'formula' in s && s.formula === l.key && findBlock(stepOf(v).block)?.gmp === 'weighing'));
-    return [small(`${l.code} · ${l.name}`), small(`${ROLE[l.role] ?? l.role} · ${PLACE[l.place] ?? l.place}`), small(l.mgPerTablet), small(endOf(q)),
+    return [small(`${l.code} · ${l.name}`), small(`${doc.stages.find((x) => x.key === l.stage)?.name ?? l.stage} · ${l.role}`), small(formulaText(l)), small(endOf(q)),
       small(weighed.map((v) => {
         const net = v.results.net;
         if (!net) return `${notYet('weighed')} · ${stepName(v)}`;
-        // The target: the weighing's own, or the lubricant re-scaled to the actual granules.
-        const target = v.results.target?.ok ? v.results.target : v.results.rescaled?.ok ? v.results.rescaled : undefined;
+        const target = v.results.target?.ok ? v.results.target : undefined;
         return `Lot ${valueText(v.values.lot)}: ${endOf(net)}${target ? ` (target ${endOf(target)})` : ''} · ${stepName(v)}`;
       }).join('\n') || '—')];
   })));

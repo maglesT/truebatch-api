@@ -24,7 +24,7 @@ async function issue(doc: ReturnType<typeof small>) {
 
 beforeAll(async () => {
   t = await freshApp();
-  t.master.products_.push({ ...item('p', 'P', 'P'), strength: null, dosageForm: 'tablet' });
+  t.master.materials_.push({ ...item('p', 'P', 'P'), category: 'API', unit: 'kg' });
   t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' });
   t.master.equipment_.push({ ...item('eq-prs', 'PRS-01', 'Tablet press'), kind: 'equipment', type: 'tablet press', room: 'CMP-01' });
   const people = { author: ['truebatch_api.master.author'], issuer: ['truebatch_api.batch.issue'], asha: ['truebatch_api.batch.operate', 'truebatch_api.batch.check'],
@@ -76,13 +76,13 @@ describe('My work', () => {
     expect((await mine('sam')).some((x) => x.id === b.id)).toBe(false);
   });
 
-  it('TA-15 a compression round started shows when the next check is due', async () => {
-    const c = await issue(small([{ machineTypes: ['tablet press'], steps: [{ block: { id: 'compress', version: 1 }, everyMinutes: 30, flow: { kind: 'repeat-until', maxRounds: 40 },
-      settings: { meanLimit: { low: '95.0', high: '105.0', unit: 'mg' }, weightBand: '5.0', weightOuterBand: '10.0', hardnessLimit: { low: '40', high: '80', unit: 'N' }, thicknessLimit: { low: '2.8', high: '3.2', unit: 'mm' } } },
-    { block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '0.100 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' } } }] }]));
+  it('TA-14 a reaction round started shows when the next readings are due', async () => {
+    const c = await issue(small([{ machineTypes: ['reactor'], steps: [{ block: { id: 'react', version: 1 }, everyMinutes: 30, flow: { kind: 'repeat-until', maxRounds: 40 },
+      settings: { temperatureLimit: { low: '75', high: '85', unit: '°C' }, ipcUnit: '%', ipcLimit: { high: '1.0', unit: '%' } } },
+    { block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '100.0 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' } } }] }]));
     await act('asha', c.id, '0.1.0.1', 'start');
     const due = (await mine('asha')).find((w) => w.id === c.id)!.badges;
-    expect(due).toMatchObject([{ kind: 'due', step: '0.1.0.1', stage: 'Stage 0', title: 'Compress with periodic checks' }]);
+    expect(due).toMatchObject([{ kind: 'due', step: '0.1.0.1', stage: 'Stage 0', title: 'Process to an end point' }]);
     expect(Date.parse(due[0]!.at!) - Date.now()).toBeGreaterThan(29 * 60_000);
   });
 });
