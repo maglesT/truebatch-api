@@ -7,7 +7,7 @@ import { stepTitle } from '../../../shared/engine/batch.js';
 import type { MasterDoc, Stage, Step } from '../../../shared/master/schema.js';
 import { move, newStage, searchBlocks, stageRoomChoices, stepFrom, type Place } from './model.js';
 import { StepSettings } from './StepSettings.js';
-import { ChipSet, Order } from './ui.js';
+import { ChipSet, Decimal, Order } from './ui.js';
 
 // What a step's flow means, in the step list.
 const FLOW_NOTE: Record<Step['flow']['kind'], string> = { none: '', 'repeat-until': 'repeated until its check passes', 'optional-with-reason': 'optional', 'qa-hold': 'QA hold' };
@@ -115,6 +115,13 @@ export function Process({ doc, onChange, md, place, onPlace, editable }: {
   );
 }
 
+type Produces = NonNullable<Stage['produces']>;
+/** Sets or (empty) clears one optional decimal of the intermediate. */
+function opt(p: Produces, k: 'mw' | 'expectedKg' | 'perMol', v: string): Produces {
+  const { [k]: _, ...rest } = p;
+  return v ? { ...rest, [k]: v } : rest;
+}
+
 function StageForm({ doc, si, stage, onChange, roles, machineTypes, md }: {
   doc: MasterDoc; si: number; stage: Stage; onChange: (s: Stage) => void; roles: string[]; machineTypes: string[]; md: MasterData;
 }) {
@@ -144,6 +151,10 @@ function StageForm({ doc, si, stage, onChange, roles, machineTypes, md }: {
             <label>Intermediate<input aria-label="Intermediate name" value={stage.produces.name} placeholder="e.g. dried granules" onChange={(e) => onChange({ ...stage, produces: { ...stage.produces!, name: e.target.value } })} /></label>
             <label>Hold time (hours)<input type="number" min={1} step="any" value={stage.produces.holdHours ?? ''}
               onChange={(e) => { const { holdHours: _, ...p } = stage.produces!; const h = Number(e.target.value); onChange({ ...stage, produces: e.target.value && h > 0 ? { ...p, holdHours: h } : p }); }} /></label>
+            {/* T28: the molar theoretical yield of this stage, and the key input of the stages that use it. */}
+            <label>Molecular weight (g/mol)<Decimal label="Intermediate molecular weight" placeholder="—" value={stage.produces.mw} onChange={(v) => onChange({ ...stage, produces: opt(stage.produces!, 'mw', v) })} /></label>
+            <label>Expected quantity (kg per batch)<Decimal label="Intermediate expected kg" placeholder="—" value={stage.produces.expectedKg} onChange={(v) => onChange({ ...stage, produces: opt(stage.produces!, 'expectedKg', v) })} /></label>
+            <label>Made per mol of key input (mol, if not 1)<Decimal label="Intermediate per mol of key input" placeholder="1" value={stage.produces.perMol} onChange={(v) => onChange({ ...stage, produces: opt(stage.produces!, 'perMol', v) })} /></label>
           </div>
         )}
       </fieldset>
