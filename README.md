@@ -1,12 +1,13 @@
 # TrueBatch API
 
-An electronic batch record for tablet manufacturing, from dispensing to QA release of bulk tablets, on the Medhanta
-platform. Built the way the Medhanta Logbook is built: one app, plain SQL, a small set of rules checked once in the app.
+An electronic batch record for making an active pharmaceutical ingredient (API) by chemical synthesis, from the first
+charge to QA release of the packed, labelled drums, on the Medhanta platform. Packing is the last stage of the record
+("Pack and label"); there is no separate packing product. The engine is a copy of the TrueBatch Tablets engine. Built the way the Medhanta Logbook is built: one app, plain SQL, a small set of rules checked once in the app.
 
 - Design decisions: `docs/design.md`
 - The TrueBatch rules and their tests: `docs/rules.md`
 
-Status: sign-on through core, permissions, the audit trail, e-signatures and master-data reads are in place, with the
+Status (copied from TrueBatch Tablets; the API blocks, header and views come in phase C): sign-on through core, permissions, the audit trail, e-signatures and master-data reads are in place, with the
 calculation templates (`shared/templates/`), the step blocks (`shared/blocks/`), the master document and its checks
 (`shared/master/`) and the batch engine (`shared/engine/`, routes in `server/routes/`). The engine also works out the
 batch status (production approval, QC approval, QA release or rejection, `shared/engine/release.ts`), marks a step
@@ -24,21 +25,8 @@ name and master version, 0008), `equipment_use_v1`, `deviation_note_v1` (`db/mig
 unit; a machine or room is in use by its batch until the last stage of the batch that names it (or may run in its room) closes, a balance is never in use by a batch, and both views name the step in words
 (`step_name`, 0010 and 0011).
 
-## TrueBatch Tablets Packing
-The packing batch record is a separate product on the platform, built from this repository on the same engine and
-screens: `docs/packing-design.md`, its rules TB-P1 to TB-P9 in `docs/rules.md`. Its own parts are in `packing/` (entry
-points, migrations, the views it publishes) and `ops/packing.*`.
-
-```sh
-export DATABASE_URL=postgres://truebatch_api_owner:dev@localhost:5432/truebatch_packing_dev DB_APP_ROLE=truebatch_packing_app
-export TRUEBATCH_API_DATABASE_URL=postgres://...   # optional: TrueBatch API' published views (released bulk batches)
-npm run migrate:packing
-npm run dev:packing        # API on :3001
-npm run dev:packing-web    # UI on :5174 (proxies /api)
-```
-
 ## Develop
-Needs Node 22 and PostgreSQL 16.
+Needs Node 22 and PostgreSQL 17.
 
 ```sh
 npm install
@@ -64,15 +52,13 @@ views it reads from master data and the four linked products, and the views it p
 `truebatch_api_app`, which cannot change or delete audit rows or signatures. Migrations run as the database owner.
 
 ## Demo installations
-The platform sets `TRUEBATCH_DEMO=1` only for the demo customer's installation of either product, never for a plant's
-(`server/demo.ts`). Then every screen shows a DEMO banner, and a person with `truebatch_api.demo.skip` (packing:
-`truebatch_packing.demo.skip`) sees "Skip wait (demo)" on a step that waits (a minimum time, the next periodic check, a
+The platform sets `TRUEBATCH_DEMO=1` only for the demo customer's installation never for a plant's
+(`server/demo.ts`). Then every screen shows a DEMO banner, and a person with `truebatch_api.demo.skip` sees "Skip wait (demo)" on a step that waits (a minimum time, the next periodic check, a
 hold time running, a mixing time below its lower limit), which ends that wait at once. To prepare a demo from a
 terminal in the product's container:
 
 ```sh
-node dist/server/demo-skip.js TA260004 [stage] --as <username>           # TrueBatch API
-node dist/packing/server/demo-skip.js TP260001 [stage] --as <username>   # TrueBatch Tablets Packing
+node dist/server/demo-skip.js TA260004 [stage] --as <username>
 ```
 
 It skips every wait running now in the batch, or in one stage (its key, name or number), as the named demo person
@@ -82,8 +68,7 @@ counts that wait as satisfied, nothing else changes. Without `TRUEBATCH_DEMO=1` 
 403 and the command exits non-zero.
 
 ## Conventions
-- One app: `server/` (Fastify), `web/` (React), `db/migrations/` (plain SQL), `test/`, `e2e/` (browser tests), `ops/`, `docs/`;
-  `packing/` for TrueBatch Tablets Packing's own entry points and migrations.
-- A test that proves a rule starts its name with the rule ID: `TB-xx` for TrueBatch rules, `PL-xx` for platform rules.
+- One app: `server/` (Fastify), `web/` (React), `db/migrations/` (plain SQL), `test/`, `e2e/` (browser tests), `ops/`, `docs/`.
+- A test that proves a rule starts its name with the rule ID: `TA-xx` for TrueBatch API rules, `PL-xx` for platform rules.
 - Paraphrase regulations; never paste more than a short phrase.
 - Work on a branch, CI green, one review pass, then merge.

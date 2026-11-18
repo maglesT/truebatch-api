@@ -1,12 +1,18 @@
 # TrueBatch API: design decisions
 
-Owner decisions of 15 November 2026. Built the Logbook way (the platform Logbook is the model for structure, patterns
+Owner decisions of 15 November 2026 (TrueBatch Tablets, whose engine this is a copy of) and 18 November 2026
+(TrueBatch API: the plan `api-plan.md` and the minimum register). Built the Logbook way (the platform Logbook is the model for structure, patterns
 and size), not the Batchwright way.
 
 ## Product
-- **One product per dosage form.** TrueBatch API covers manufacturing, from dispensing to QA release of bulk
-  tablets. Packing is a separate product, "TrueBatch Tablets Packing", in this repository on the same engine
-  (`docs/packing-design.md`).
+- **TrueBatch API** is the batch record for making an API by chemical synthesis: one stage per synthesis step (each
+  makes an intermediate with its own yield and hold time, used by the next stage), then crystallisation, isolation,
+  drying and milling, and **Pack and label** as the last stage of the same record (owner, 18 Nov 2026: no separate
+  packing product). Out of scope: fermentation and cell culture, extraction from natural sources,
+  radiopharmaceuticals, sterile APIs after the sterilisation point, clinical-trial APIs, continuous flow.
+- **A copy of the TrueBatch Tablets engine, no new mechanism.** The API's differences are data: new blocks (data
+  files), one new template (T28 molar quantity), the batch header in kg, the formula per stage and one more published
+  view (`output_lot_v1`). The sections below are those of TrueBatch Tablets until phase C replaces the tablet parts.
 
 ## Platform
 - Runs on the Medhanta platform. Core provides people, sign-in, permissions, e-signature re-authentication and master
@@ -17,7 +23,8 @@ and size), not the Batchwright way.
   use (at most one renewal a minute); the session ends with core's sign-on (8 hours).
 
 ## Links
-Owner decisions of 15 November 2026. Built as the Logbook's link clients: one client (`server/links.ts`) reads each
+Owner decisions of 15 November 2026 (TrueBatch Tablets, whose engine this is a copy of) and 18 November 2026
+(TrueBatch API: the plan `api-plan.md` and the minimum register). Built as the Logbook's link clients: one client (`server/links.ts`) reads each
 provider's report views live through `<PROVIDER>_DATABASE_URL`, which the platform writes only while the link is on;
 nothing is copied or cached. A read is **absent** (no URL: not licensed or switched off), **down** (refused or not
 answering) or **ok**.

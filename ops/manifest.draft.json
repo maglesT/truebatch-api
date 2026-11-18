@@ -10,7 +10,7 @@
     {"code": "truebatch_api.batch.check", "label": "Check steps performed by another person (second person)"},
     {"code": "truebatch_api.batch.supervise", "label": "Production approval of a completed batch record"},
     {"code": "truebatch_api.qc.approve", "label": "QC approval of the results used for release"},
-    {"code": "truebatch_api.qa.release", "label": "QA review and release of filled, inspected units"},
+    {"code": "truebatch_api.qa.release", "label": "QA review and release of packed, labelled API batches"},
     {"code": "truebatch_api.view", "label": "View batch records and master versions"},
     {"code": "truebatch_api.demo.skip", "label": "Skip a running wait (demo installations only)"}
   ],
@@ -24,5 +24,5 @@
     "mms": ["lot_v1", "lot_test_v1"],
     "recruitment": ["training_v1"]
   },
-  "source": { "repo": "https://github.com/maglesT/truebatch-apis", "commit": "<full commit id at bundling>" }
+  "source": { "repo": "https://github.com/maglesT/truebatch-api", "commit": "<full commit id at bundling>" }
 }
