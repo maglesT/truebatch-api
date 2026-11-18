@@ -6,7 +6,7 @@ export const charge: Block = {
   instruction: 'Check the label of the dispensed material and charge all of it into the machine.',
   fields: [
     { name: 'lot', label: 'Lot charged', kind: 'lot' },
-    { name: 'machine', label: 'Machine charged', kind: 'machine', types: ['mix', 'blend', 'granulat', 'rmg', 'vessel', 'stirrer', 'fluid bed'] },
+    { name: 'machine', label: 'Machine charged', kind: 'machine', types: ['reactor', 'vessel', 'mix', 'blend', 'stirrer'] },
     { name: 'allCharged', label: 'All of the dispensed material charged', kind: 'yes-no' },
   ],
   settings: [{ name: 'material', label: 'Material (formula line)', kind: 'material' }],

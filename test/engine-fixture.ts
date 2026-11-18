@@ -1,57 +1,60 @@
 import { masterSchema, type MasterDoc } from '../shared/master/schema.js';
 import type { EventKind, Payload, StepEvent, StepKey } from '../shared/engine/index.js';
 
-// An invented film-coated tablet, 100 mg of an invented API, batch of 100 000 tablets (core 250.0 mg, coated
-// 257.5 mg). Core: 100.0 + 120.0 + 10.0 + 17.5 + 2.5 = 250.0 mg; the granulation water is a solvent.
-export const tablet = (): MasterDoc => masterSchema.parse({
-  header: { productItemId: 'prd-1', productCode: 'PRD-001', productName: 'Examplol 100 mg film-coated tablets', batchSize: '100000', coreWeightMg: '250.0', coatedWeightMg: '257.5', dispensingRooms: ['DSP-01'] },
+// An invented API, Examplone hydrochloride, 100 kg expected per batch, made in two steps: a base solution
+// (preparation), step 1 condensation of the starting material (80.0 kg, MW 200.0 = 400 mol) with 1.10 eq of an amine,
+// step 2 salt formation with 1.05 eq of hydrochloric acid as a volume, then drying and milling in two sub-batches.
+// Step 1's molar theoretical yield: 400 mol × 330.0 g/mol = 132.000 kg of intermediate 1; 120.0 kg are expected.
+export const api = (): MasterDoc => masterSchema.parse({
+  header: { productItemId: 'prd-1', productCode: 'API-001', productName: 'Examplone hydrochloride', batchSize: '100.0', mw: '366.5', retestMonths: 36, dispensingRooms: ['DSP-01'] },
   formula: [
-    { key: 'api', materialItemId: 'mat-api', code: 'MAT-001', name: 'Examplol', mgPerTablet: '100.0', role: 'api', place: 'intragranular', adjust: { potency: { basis: 'dried', standardIs: 'anhydrous' } } },
-    { key: 'lactose', materialItemId: 'mat-lac', code: 'MAT-002', name: 'Lactose monohydrate', mgPerTablet: '120.0', role: 'excipient', place: 'intragranular', adjust: { compensates: ['api'] } },
-    { key: 'pvp', materialItemId: 'mat-pvp', code: 'MAT-003', name: 'Povidone K30', mgPerTablet: '10.0', role: 'excipient', place: 'binder' },
-    { key: 'water', materialItemId: 'mat-wat', code: 'MAT-004', name: 'Purified water', mgPerTablet: '50.0', role: 'solvent', place: 'binder' },
-    { key: 'mcc', materialItemId: 'mat-mcc', code: 'MAT-005', name: 'Microcrystalline cellulose', mgPerTablet: '17.5', role: 'excipient', place: 'extragranular' },
-    { key: 'mgst', materialItemId: 'mat-mgs', code: 'MAT-006', name: 'Magnesium stearate', mgPerTablet: '2.5', role: 'excipient', place: 'extragranular' },
-    { key: 'coat', materialItemId: 'mat-cot', code: 'MAT-007', name: 'Film coating system', mgPerTablet: '7.5', role: 'excipient', place: 'coating', layer: 1 },
+    { key: 'ksm', materialItemId: 'mat-ksm', code: 'MAT-001', name: 'Examplol acid', stage: 'step1', role: 'starting material', quantity: '80.0', unit: 'kg', mw: '200.0', adjust: { potency: { basis: 'dried', standardIs: 'anhydrous' } } },
+    { key: 'amine', materialItemId: 'mat-amn', code: 'MAT-002', name: 'Exampline', stage: 'step1', role: 'reagent', eq: '1.10', mw: '150.0', adjust: { potency: { basis: 'as is', standardIs: 'anhydrous' } } },
+    { key: 'naoh', materialItemId: 'mat-nao', code: 'MAT-003', name: 'Sodium hydroxide', stage: 'solution', role: 'reagent', quantity: '10.0', unit: 'kg' },
+    { key: 'water', materialItemId: 'mat-wat', code: 'MAT-004', name: 'Purified water', stage: 'solution', role: 'solvent', quantity: '50.0', unit: 'L' },
+    { key: 'toluene', materialItemId: 'mat-tol', code: 'MAT-005', name: 'Toluene', stage: 'step1', role: 'solvent', quantity: '5.0', unit: 'L/kg' },
+    { key: 'hcl', materialItemId: 'mat-hcl', code: 'MAT-006', name: 'Hydrochloric acid 35 %', stage: 'salt', role: 'reagent', eq: '1.05', unit: 'L', mw: '36.46', density: '1.17' },
+    { key: 'ipa', materialItemId: 'mat-ipa', code: 'MAT-007', name: 'Isopropyl alcohol', stage: 'salt', role: 'solvent', quantity: '4.0', unit: 'L/kg' },
   ],
   stages: [
     {
-      key: 'binder', name: 'Binder solution', kind: 'preparation', machineTypes: ['balance', 'stirrer'], role: 'Granulation operator',
-      produces: { name: 'binder solution', holdHours: 24 },
+      key: 'solution', name: 'Base solution', kind: 'preparation', machineTypes: ['balance', 'stirrer'], role: 'Production operator',
+      produces: { name: 'base solution', holdHours: 24 },
       steps: [
-        { key: 'weigh-pvp', block: { id: 'weigh', version: 1 }, checker: true, settings: { target: { formula: 'pvp' }, tolerance: '0.5' } },
+        { key: 'weigh-naoh', block: { id: 'weigh', version: 1 }, checker: true, settings: { target: { formula: 'naoh' }, tolerance: '0.5' } },
         { key: 'stir', block: { id: 'mix', version: 1 }, checker: false, minMinutes: 10 },
       ],
     },
     {
-      key: 'granulation', name: 'Granulation', kind: 'normal', machineTypes: ['balance', 'granulator', 'dryer', 'mill'], uses: ['binder'], role: 'Granulation operator',
-      produces: { name: 'dried granules', holdHours: 72 },
+      key: 'step1', name: 'Step 1: condensation', kind: 'normal', machineTypes: ['balance', 'reactor', 'dryer', 'mill'], uses: ['solution'], role: 'Production operator',
+      produces: { name: 'intermediate 1', holdHours: 72, mw: '330.0', expectedKg: '120.0' },
       steps: [
-        { key: 'weigh-api', block: { id: 'weigh', version: 1 }, checker: true, critical: true, settings: { target: { formula: 'api', adjusted: true }, tolerance: '0.5' } },
-        { key: 'weigh-lactose', block: { id: 'weigh', version: 1 }, checker: true, settings: { target: { formula: 'lactose', adjusted: true }, tolerance: '0.5' } },
-        { key: 'charge-api', block: { id: 'charge', version: 1 }, checker: true, settings: { material: { formula: 'api' } } },
-        { key: 'granulate', block: { id: 'granulate', version: 1 }, checker: false, settings: { endPointLimit: { low: '8.0', high: '12.0', unit: 'kW' } } },
+        { key: 'weigh-ksm', block: { id: 'weigh', version: 1 }, checker: true, critical: true, settings: { target: { formula: 'ksm', adjusted: true }, tolerance: '0.5' } },
+        { key: 'weigh-amine', block: { id: 'weigh', version: 1 }, checker: true, settings: { target: { formula: 'amine', adjusted: true }, tolerance: '0.5' } },
+        { key: 'charge-ksm', block: { id: 'charge', version: 1 }, checker: true, settings: { material: { formula: 'ksm' } } },
+        { key: 'react', block: { id: 'react', version: 1 }, checker: false, everyMinutes: 60, flow: { kind: 'repeat-until', maxRounds: 10 },
+          settings: { temperatureLimit: { low: '75', high: '85', unit: '°C' }, ipcUnit: '%', ipcLimit: { high: '1.0', unit: '%' } } },
         { key: 'dry', block: { id: 'dry', version: 1 }, checker: false, flow: { kind: 'repeat-until', maxRounds: 5 }, settings: { lodLimit: { high: '2.0', unit: '%' } } },
         { key: 'mill', block: { id: 'sieve', version: 1 }, checker: true },
-        { key: 'yield', block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '23.000 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } } },
+        { key: 'yield', block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: { molar: true }, yieldLimit: { low: '85.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } } },
       ],
     },
     {
-      key: 'compression', name: 'Compression', kind: 'normal', machineTypes: ['tablet press'], uses: ['granulation'], role: 'Compression operator',
-      produces: { name: 'core tablets', holdHours: 720 },
+      key: 'salt', name: 'Step 2: salt formation', kind: 'normal', machineTypes: ['reactor'], uses: ['step1'], role: 'Production operator',
+      produces: { name: 'wet API', holdHours: 720 },
       steps: [
-        { key: 'compress', block: { id: 'compress', version: 1 }, checker: false, everyMinutes: 30, flow: { kind: 'repeat-until', maxRounds: 40 },
-          settings: { meanLimit: { low: '245.0', high: '255.0', unit: 'mg' }, weightBand: '5.0', weightOuterBand: '10.0', hardnessLimit: { low: '60', high: '120', unit: 'N' }, thicknessLimit: { low: '3.8', high: '4.2', unit: 'mm' } } },
-        { key: 'yield', block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: { header: 'coreBatch' }, yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } } },
+        { key: 'crystallise', block: { id: 'react', version: 1 }, checker: false, everyMinutes: 30, flow: { kind: 'repeat-until', maxRounds: 40 },
+          settings: { temperatureLimit: { low: '0', high: '10', unit: '°C' }, ipcUnit: 'pH', ipcLimit: { low: '1.5', high: '2.5', unit: 'pH' } } },
+        { key: 'yield', block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: { header: 'batchSize' }, yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } } },
       ],
     },
     {
-      key: 'coating', name: 'Coating', kind: 'sub-batch', count: 2, machineTypes: ['coater'], uses: ['compression'], role: 'Coating operator',
-      produces: { name: 'coated tablets', holdHours: 2160 },
+      key: 'drying', name: 'Drying', kind: 'sub-batch', count: 2, machineTypes: ['dryer'], uses: ['salt'], role: 'Production operator',
+      produces: { name: 'dried API', holdHours: 2160 },
       steps: [
-        { key: 'coat', block: { id: 'coat', version: 1 }, checker: false, flow: { kind: 'repeat-until', maxRounds: 10 }, settings: { coreWeight: { ref: 'compression/compress/meanWeight' }, gainLimit: { low: '2.8', high: '3.2', unit: '%' } } },
+        { key: 'dry', block: { id: 'dry', version: 1 }, checker: false, flow: { kind: 'repeat-until', maxRounds: 10 }, settings: { lodLimit: { high: '0.5', unit: '%' } } },
         { key: 'qa-hold', block: { id: 'check', version: 1 }, checker: false, flow: { kind: 'qa-hold' }, settings: { what: 'Appearance score', unit: '', limit: { low: '4', unit: '' } } },
-        { key: 'yield', block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '12.875 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } } },
+        { key: 'yield', block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '50.000 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } } },
       ],
     },
   ],
@@ -72,8 +75,8 @@ export const unplaced = <T extends { rule?: string; path: string }>(problems: T[
 /** A small master with the given stages; each step defaults to a "check a value" step without a checker. */
 export function small(stages: object[]): MasterDoc {
   return masterSchema.parse({
-    header: { productItemId: 'p', productCode: 'P', productName: 'P', batchSize: '1000', coreWeightMg: '100.0', dispensingRooms: ['DSP-01'] },
-    formula: [{ key: 'x', materialItemId: 'm', code: 'M', name: 'M', mgPerTablet: '100.0', role: 'excipient', place: 'intragranular' }],
+    header: { productItemId: 'p', productCode: 'P', productName: 'P', batchSize: '100.0', retestMonths: 24, dispensingRooms: ['DSP-01'] },
+    formula: [{ key: 'x', materialItemId: 'm', code: 'M', name: 'M', stage: 's0', role: 'reagent', quantity: '100.0', unit: 'kg' }],
     stages: stages.map((s, i) => ({ key: `s${i}`, name: `Stage ${i}`, kind: 'normal', ...s,
       steps: ((s as { steps?: object[] }).steps ?? [{}]).map((t, j) => ({ key: `t${j}`, block: { id: 'check', version: 1 }, checker: false,
         settings: { what: 'pH', unit: '', limit: { low: '5.0', high: '7.0', unit: '' } }, ...t })) })),

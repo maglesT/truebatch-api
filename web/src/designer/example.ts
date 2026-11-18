@@ -113,10 +113,7 @@ export function workedExample(doc: MasterDoc, si: number, ti: number, typed: Rec
     if ('ref' in v) { const [sk, tk] = v.ref.split('/'); add(...where(doc, sk!, tk!)); }
     if ('formula' in v && v.adjusted) {
       const line = doc.formula.find((l) => l.key === v.formula);
-      for (const f of b.fields) if (CERTIFICATE[f.name] && line?.adjust && !line.adjust.compensates?.length) values[f.name] = { value: CERTIFICATE[f.name]!, unit: '%' };
-      for (const k of line?.adjust?.compensates ?? []) doc.stages.forEach((s, rs) => s.steps.forEach((t, rt) => {
-        if (Object.values(t.settings).some((x) => typeof x === 'object' && 'formula' in x && x.formula === k && x.adjusted)) add(rs, rt);
-      }));
+      for (const f of b.fields) if (CERTIFICATE[f.name] && line?.adjust) values[f.name] = { value: CERTIFICATE[f.name]!, unit: '%' };
     }
   }
   Object.assign(values, typed);
@@ -142,25 +139,9 @@ export function workedExample(doc: MasterDoc, si: number, ti: number, typed: Rec
 
 export interface LotValues { assay?: string; water?: string; lod?: string; content?: string }
 export interface Dispensed { line: FormulaLine; standard: Stored; adjusted?: Stored }
-/**
- * The calculation preview: each formula line's batch quantity, adjusted with the example lot values (salt factor,
- * potency or content, overage), and the compensating fillers (T10) from the adjusted quantities.
- */
+/** The calculation preview: each formula line's batch quantity, adjusted with the example lot values (salt factor, potency or content, overage). */
 export function dispensing(doc: MasterDoc, lots: Record<string, LotValues>): Dispensed[] {
   const here = { stage: 0, sub: 1, step: 0, round: 1 };
   const valuesOf = (k: string): Record<string, Value> => Object.fromEntries(Object.entries(lots[k] ?? {}).filter(([, v]) => v?.trim()).map(([n, v]) => [n, { value: v!.trim(), unit: '%' }]));
-  const adjustedLines = doc.formula.filter((l) => l.adjust && !l.adjust.compensates?.length);
-  const out = new Map<string, Dispensed>();
-  for (const l of doc.formula) out.set(l.key, { line: l, standard: lineQuantity(doc, [], here, l, false, {}) });
-  for (const l of adjustedLines) out.get(l.key)!.adjusted = lineQuantity(doc, [], here, l, true, valuesOf(l.key));
-  // The fillers compensate the quantities "weighed" in a preview stage made of the adjusted lines.
-  const preview: MasterDoc = { ...doc, stages: [{ key: 'preview', name: 'Preview', kind: 'normal', roomTypes: [], machineTypes: [], role: '', uses: [],
-    steps: adjustedLines.map((l, i) => ({ key: `w${i}`, block: { id: 'weigh', version: 1 }, settings: { target: { formula: l.key, adjusted: true } }, checker: true, waitForCheck: false, critical: false, flow: { kind: 'none' } })) }] };
-  const events = adjustedLines.map((l, i) => event(0, i, 1, {}, { target: out.get(l.key)!.adjusted! }, i + 1));
-  for (const l of doc.formula) if (l.adjust?.compensates?.length) out.get(l.key)!.adjusted = lineQuantity(preview, events, here, l, true, valuesOf(l.key));
-  return doc.formula.map((l) => out.get(l.key)!);
+  return doc.formula.map((l) => ({ line: l, standard: lineQuantity(doc, [], here, l, false, {}), ...(l.adjust ? { adjusted: lineQuantity(doc, [], here, l, true, valuesOf(l.key)) } : {}) }));
 }
-
-/** The theoretical batch weights (T8): tablet weight × batch size. */
-export const batchWeight = (doc: MasterDoc, mg: string | undefined) =>
-  (mg ? store(callTemplate('T8', { mode: 'per unit', perUnit: `${mg} mg`, count: `${doc.header.batchSize} tablets`, unit: 'kg' })) : undefined);

@@ -4,7 +4,7 @@ import { batchRecordDoc } from '../server/batch-record.js';
 import { recordLate } from '../server/late.js';
 import { loadBatch, recordInput } from '../server/routes/batches.js';
 import { call, freshApp, handLabels, login, proofFor, seedUser, type TestApp } from './helpers.js';
-import { small, tablet } from './engine-fixture.js';
+import { small, api } from './engine-fixture.js';
 import { findBlock } from '../shared/blocks/index.js';
 import { machineRefusal, roomRefusal } from '../shared/engine/picks.js';
 
@@ -18,8 +18,8 @@ const item = (itemId: string, c: string, name: string) => ({ itemId, code: c, na
 
 beforeAll(async () => {
   t = await freshApp();
-  t.master.products_.push({ ...item('prd-1', 'PRD-001', 'Examplol 100 mg film-coated tablets'), strength: '100 mg', dosageForm: 'tablet' });
-  for (const l of tablet().formula) t.master.materials_.push({ ...item(l.materialItemId, l.code, l.name), category: null, unit: 'kg' });
+  t.master.materials_.push({ ...item('prd-1', 'API-001', 'Examplone hydrochloride'), category: 'API', unit: 'kg' });
+  for (const l of api().formula) t.master.materials_.push({ ...item(l.materialItemId, l.code, l.name), category: null, unit: 'kg' });
   t.master.equipment_.push(
     { ...item('eq-bal', 'BAL-01', 'Balance 60 kg'), kind: 'instrument', type: 'balance', room: 'DSP-01' },
     { ...item('eq-str', 'STR-01', 'Stirrer'), kind: 'equipment', type: 'stirrer', room: 'GRN-01' },
@@ -38,7 +38,7 @@ beforeAll(async () => {
 afterAll(() => t.close());
 
 const as = (who: string, method: 'GET' | 'POST' | 'PUT', url: string, body?: object) => call(t.app, cookies[who]!, method as 'GET', url, body);
-async function effectiveMaster(change?: (d: ReturnType<typeof tablet>) => void, doc = tablet()) {
+async function effectiveMaster(change?: (d: ReturnType<typeof api>) => void, doc = api()) {
   change?.(doc);
   const res = await as('author', 'POST', '/api/masters', { doc });
   expect(res.statusCode).toBe(200);
@@ -80,10 +80,10 @@ const recordText = async (id: number) => pdfText(batchRecordDoc(await recordInpu
 
 describe('master versions', () => {
   it('a new master is version 1, a draft; the draft can be changed and checked', async () => {
-    const res = await as('author', 'POST', '/api/masters', { doc: tablet() });
+    const res = await as('author', 'POST', '/api/masters', { doc: api() });
     const { id, versionNo } = res.json() as { id: number; versionNo: number };
     expect(versionNo).toBe(1);
-    const doc = tablet();
+    const doc = api();
     doc.header.batchSize = '50000';
     expect((await as('author', 'PUT', `/api/master-versions/${id}`, { doc })).statusCode).toBe(200);
     expect(((await as('viewer', 'GET', `/api/master-versions/${id}`)).json() as { doc: typeof doc }).doc.header.batchSize).toBe('50000');
@@ -94,16 +94,16 @@ describe('master versions', () => {
   });
 
   it('PL-08 the product and materials must be active in master data', async () => {
-    const doc = tablet();
+    const doc = api();
     doc.formula[0]!.materialItemId = 'nowhere';
     expect((await as('author', 'POST', '/api/masters', { doc })).statusCode).toBe(409);
   });
 
   it('only a draft is editable: a version out of draft is locked by the database', async () => {
-    const { id, masterId } = (await as('author', 'POST', '/api/masters', { doc: tablet() })).json() as { id: number; masterId: number };
+    const { id, masterId } = (await as('author', 'POST', '/api/masters', { doc: api() })).json() as { id: number; masterId: number };
     expect((await as('author', 'POST', `/api/masters/${masterId}/versions`, {})).statusCode).toBe(409);
     await t.owner`update master_versions set state = 'in_review' where id = ${id}`;
-    expect((await as('author', 'PUT', `/api/master-versions/${id}`, { doc: tablet() })).json()).toMatchObject({ error: 'locked' });
+    expect((await as('author', 'PUT', `/api/master-versions/${id}`, { doc: api() })).json()).toMatchObject({ error: 'locked' });
     expect(await code(t.sql`update master_versions set doc = '{}' where id = ${id}`)).toBe('P0001');
     await t.owner`update master_versions set state = 'approved' where id = ${id}`;
     expect(await code(t.owner`update master_versions set state = 'draft' where id = ${id}`)).toBe('P0001');
@@ -126,7 +126,7 @@ describe('issuing a batch', () => {
   });
 
   it('only an effective master version is issued, and only with the issue permission', async () => {
-    const { id } = (await as('author', 'POST', '/api/masters', { doc: tablet() })).json() as { id: number };
+    const { id } = (await as('author', 'POST', '/api/masters', { doc: api() })).json() as { id: number };
     expect((await as('issuer', 'POST', '/api/batches', { masterVersionId: id, proof: proofFor('issuer') })).json()).toMatchObject({ error: 'not_effective' });
     expect((await as('asha', 'POST', '/api/batches', { masterVersionId: id, proof: proofFor('asha') })).statusCode).toBe(403);
     const bad = await effectiveMaster((d) => { d.stages[1]!.steps[0]!.checker = false; });
@@ -142,16 +142,16 @@ describe('walking a stage', () => {
   it('the first step of the preparation is open; everything else waits, with the reason', async () => {
     const b = await batch(id);
     expect(b.steps[0]).toMatchObject({ id: '0.1.0.1', state: 'open', actions: ['start', 'note'] });
-    expect(b.steps.find((s) => s.id === '1.1.0.1')!.blocked).toBe('Waits for the preparation Binder solution to close');
+    expect(b.steps.find((s) => s.id === '1.1.0.1')!.blocked).toBe('Waits for the preparation Base solution to close');
   });
 
   it('TA-07 start → record (the templates compute) → done (signed performed) → checked by another person (signed verified)', async () => {
     expect((await act('asha', id, '0.1.0.1', 'start')).statusCode).toBe(200);
-    // 10.0 mg × 100 000 = 1.000 kg target; 1.350 − 0.350 = 1.000 kg net.
-    const rec = await act('asha', id, '0.1.0.1', 'record', { values: { lot: 'PVP-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), gross: '1.350', tare: '0.350' } });
+    // 10.0 kg target; 11.350 − 1.350 = 10.000 kg net.
+    const rec = await act('asha', id, '0.1.0.1', 'record', { values: { lot: 'NAOH-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), gross: '11.350', tare: '1.350' } });
     expect(rec.statusCode).toBe(200);
     const s = await stepOf(id, '0.1.0.1');
-    expect(s.results.net).toMatchObject({ ok: true, value: '1' });
+    expect(s.results.net).toMatchObject({ ok: true, value: '10' });
     expect(s.results.netCheck?.check?.pass).toBe(true);
     expect(s.problems).toEqual([]);
     const done = await sign('asha', id, '0.1.0.1', 'done');
@@ -168,7 +168,7 @@ describe('walking a stage', () => {
     const later = await issue(await effectiveMaster());
     const r = (await as('asha', 'GET', `/api/batches/${later.id}/previous-use?item=eq-bal`)).json() as { previous: { batchNo: string; text: string } | null };
     const first = ((await as('asha', 'GET', `/api/batches/${id}`)).json() as { batch: { batchNo: string } }).batch.batchNo;
-    expect(r.previous).toMatchObject({ batchNo: first, text: `PRD-001 · Examplol 100 mg film-coated tablets, batch ${first}` });
+    expect(r.previous).toMatchObject({ batchNo: first, text: `API-001 · Examplone hydrochloride, batch ${first}` });
     // Nothing used it before the first batch: typed by hand.
     expect(((await as('asha', 'GET', `/api/batches/${id}/previous-use?item=eq-bal`)).json() as { previous: unknown }).previous).toBeNull();
   });
@@ -187,7 +187,7 @@ describe('walking a stage', () => {
     expect((await stepOf(id, '0.1.1.1')).state).toBe('done_awaiting_check');
     expect((await sign('ravi', id, '0.1.1.1', 'check')).statusCode).toBe(200);
     const b = await batch(id);
-    expect(b.stages[0]).toMatchObject({ key: 'binder', closed: true });
+    expect(b.stages[0]).toMatchObject({ key: 'solution', closed: true });
     // The check that closed the preparation recorded it once (equipment_use_v1 reads it to end the batch's uses).
     expect(await t.owner`select payload from batch_events where batch_id = ${id} and kind = 'stage_closed'`).toEqual([{ payload: { stage: 0 } }]);
     expect(b.steps.find((s) => s.id === '1.1.0.1')!.state).toBe('open');
@@ -203,7 +203,8 @@ describe('walking a stage', () => {
     await act('asha', id, '1.1.0.1', 'start');
     const press = await act('asha', id, '1.1.0.1', 'record', { values: { balance: 'eq-prs', gross: 'heavy' } });
     expect(press.json()).toMatchObject({ error: 'invalid_values', problems: ['PRS-01 is not a balance (master data: tablet press)', 'Gross weight: type a number, e.g. "50.300"'] });
-    await act('asha', id, '1.1.0.1', 'record', { values: { lot: 'API-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), assay: '99.0', lod: '0.5', gross: '11.000', tare: '0.850' } });
+    // 80.0 kg at an assay of 99.0 % and LOD 0.5 %: 81.214 kg target; 82.000 − 0.850 = 81.150 kg.
+    await act('asha', id, '1.1.0.1', 'record', { values: { lot: 'KSM-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), assay: '99.0', lod: '0.5', gross: '82.000', tare: '0.850' } });
     const stale = await act('asha', id, '1.1.0.1', 'done', { proof: proofFor('asha'), contentHash: '0'.repeat(64) });
     expect(stale.json()).toMatchObject({ error: 'content_changed' });
   });
@@ -215,18 +216,18 @@ describe('walking a stage', () => {
   });
 
   it('TA-11 a machine field takes only the type it asks for, in a room the stage allows; a room only of the stage\'s areas or rooms', () => {
-    const stage = { ...tablet().stages[1]!, machineTypes: ['Balance', 'Vessel'], roomTypes: ['Granulation', 'DSP-01'] };
+    const stage = { ...api().stages[1]!, machineTypes: ['Balance', 'Vessel'], roomTypes: ['Step 1: condensation', 'DSP-01'] };
     const balance = findBlock({ id: 'weigh', version: 1 })!.fields.find((f) => f.name === 'balance')!;
-    const rooms = [{ code: 'GRN-01', area: 'Granulation' }, { code: 'DSP-01', area: 'Dispensing' }, { code: 'QCL-02', area: 'QC laboratory' }, { code: 'BL-GRN', area: 'Beta-lactam' }];
+    const rooms = [{ code: 'GRN-01', area: 'Step 1: condensation' }, { code: 'DSP-01', area: 'Dispensing' }, { code: 'QCL-02', area: 'QC laboratory' }, { code: 'BL-GRN', area: 'Beta-lactam' }];
     const m = (code: string, type: string, room: string | null) => machineRefusal(stage, balance, { code, type, room }, rooms, ['DSP-01']);
     expect([m('BAL-01', 'Balance', 'DSP-01'), m('BAL-03', 'balance', 'GRN-01')]).toEqual([null, null]);
-    expect(m('BAL-02', 'balance', null)).toBe('BAL-02 stands in no room in master data, so it is not in a room this stage allows (Granulation, DSP-01)');
+    expect(m('BAL-02', 'balance', null)).toBe('BAL-02 stands in no room in master data, so it is not in a room this stage allows (Step 1: condensation, DSP-01)');
     expect(m('SPV-01', 'Vessel', 'GRN-01')).toBe('SPV-01 is not a balance (master data: Vessel)');
     expect(m('BAL-06', 'Balance', 'QCL-02')).toBe('BAL-06 stands in QCL-02 (QC laboratory), a laboratory area: weigh with a balance of a dispensing room of the master or of a room this stage allows');
-    expect(m('BAL-07', 'Balance', 'BL-GRN')).toBe('BAL-07 stands in BL-GRN, neither in a dispensing room of the master nor in a room this stage allows (Granulation, DSP-01)');
-    const press = findBlock({ id: 'compress', version: 1 })!.fields.find((f) => f.name === 'machine')!;
-    expect(machineRefusal(stage, press, { code: 'PRS-01', type: 'Tablet press', room: 'GRN-01' }, rooms)).toBe('PRS-01 is not one of the machine types this stage allows (Balance, Vessel)');
-    expect(rooms.map((r) => roomRefusal(stage, r))).toEqual([null, null, 'QCL-02 is not one of the rooms this stage allows (Granulation, DSP-01)', 'BL-GRN is not one of the rooms this stage allows (Granulation, DSP-01)']);
+    expect(m('BAL-07', 'Balance', 'BL-GRN')).toBe('BAL-07 stands in BL-GRN, neither in a dispensing room of the master nor in a room this stage allows (Step 1: condensation, DSP-01)');
+    const reactor = findBlock({ id: 'react', version: 1 })!.fields.find((f) => f.name === 'machine')!;
+    expect(machineRefusal(stage, reactor, { code: 'RCT-01', type: 'Reactor', room: 'GRN-01' }, rooms)).toBe('RCT-01 is not one of the machine types this stage allows (Balance, Vessel)');
+    expect(rooms.map((r) => roomRefusal(stage, r))).toEqual([null, null, 'QCL-02 is not one of the rooms this stage allows (Step 1: condensation, DSP-01)', 'BL-GRN is not one of the rooms this stage allows (Step 1: condensation, DSP-01)']);
   });
 
   it('TA-04 each entry is saved at once, with the person and the server time', async () => {
@@ -252,7 +253,7 @@ describe('walking a stage', () => {
     const s = (await stepOf(id, '1.1.0.1')) as unknown as { needsResign: boolean; replaced?: unknown; results: Record<string, { value: string }> };
     expect(s.needsResign).toBe(true);
     expect(s.replaced).toBeUndefined();
-    expect(s.results.net!.value).toBe('10.151');
+    expect(s.results.net!.value).toBe('81.151');
     const history = (await as('viewer', 'GET', `/api/batches/${id}/steps/1.1.0.1/events`)).json() as { events: { kind: string }[]; replaced: unknown };
     expect(history.replaced).toMatchObject([{ field: 'tare', was: { value: '0.850' }, now: { value: '0.849' }, reason: 'Tare misread' }]);
     expect(history.events.map((e) => e.kind)).toEqual(['started', 'value', 'done', 'sent_back', 'corrected']);
@@ -262,21 +263,23 @@ describe('walking a stage', () => {
 
   it('TA-06 a correction reaches the step that used the value: it shows the new result and who changed it, and is signed and checked again', async () => {
     expect((await act('asha', id, '1.1.1.1', 'start')).statusCode).toBe(200);
-    await act('asha', id, '1.1.1.1', 'record', { values: { lot: 'LAC-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), gross: '12.700', tare: '0.850' } });
+    // 1.10 eq of the amine on the starting material weighed: 81.151 ÷ 200.0 × 1.10 × 150.0 = 66.950 kg; 67.150 kg is 0.3 % over.
+    await act('asha', id, '1.1.1.1', 'record', { values: { lot: 'AMN-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), assay: '100.0', gross: '68.000', tare: '0.850' } });
     expect((await sign('asha', id, '1.1.1.1', 'done')).statusCode).toBe(200);
     expect((await sign('ravi', id, '1.1.1.1', 'check')).statusCode).toBe(200);
     const before = (await stepOf(id, '1.1.1.1')).results as unknown as { target: { value: string } };
-    // The API's assay is corrected after the lactose target (T10) was worked out from it.
-    expect((await act('asha', id, '1.1.0.1', 'correct', { values: { assay: '98.0' }, reason: 'Assay typed from the old certificate' })).statusCode).toBe(200);
+    expect(Number(before.target.value).toFixed(3)).toBe('66.950');
+    // The starting material's gross weight is corrected after the amine target (T28) was worked out from its net.
+    expect((await act('asha', id, '1.1.0.1', 'correct', { values: { gross: '81.700' }, reason: 'Gross weight typed from the wrong ticket' })).statusCode).toBe(200);
     const s = (await stepOf(id, '1.1.1.1')) as unknown as { state: string; needsResign: boolean; inputChanged: { kind: string; personName: string; payload: { reason: string } }[]; results: { target: { value: string } } };
     expect([s.state, s.needsResign]).toEqual(['in_progress', true]);
-    expect(s.inputChanged).toMatchObject([{ kind: 'corrected', personName: 'ASHA', payload: { reason: 'Assay typed from the old certificate' } }]);
+    expect(s.inputChanged).toMatchObject([{ kind: 'corrected', personName: 'ASHA', payload: { reason: 'Gross weight typed from the wrong ticket' } }]);
     expect(Number(s.results.target.value)).toBeLessThan(Number(before.target.value));
-    // Signed again with the new target, then checked again. 11.850 kg is now 0.9 % over the new target: a note first.
+    // Signed again with the new target (80.851 kg: 66.702 kg), then checked again. 67.150 kg is now 0.7 % over: a note first.
     await sign('asha', id, '1.1.0.1', 'done');
     await sign('ravi', id, '1.1.0.1', 'check');
     expect((await sign('asha', id, '1.1.1.1', 'done')).json()).toMatchObject({ error: 'not_ready', problems: ['Out of limits: Net against target. Add a deviation note first.'] });
-    await act('asha', id, '1.1.1.1', 'note', { text: 'Lactose 0.9 % over the corrected target', reference: 'DEV-26-003' });
+    await act('asha', id, '1.1.1.1', 'note', { text: 'Amine 0.7 % over the corrected target', reference: 'DEV-26-003' });
     expect((await sign('asha', id, '1.1.1.1', 'done')).statusCode).toBe(200);
     expect((await stepOf(id, '1.1.1.1')).state).toBe('done_awaiting_check');
     expect((await sign('ravi', id, '1.1.1.1', 'check')).statusCode).toBe(200);
@@ -286,13 +289,13 @@ describe('walking a stage', () => {
 
   it('TA-22 the batch record PDF shows the corrected value struck through with its reason, the worked lines, limits, notes and who did what', async () => {
     const text = await recordText(id);
-    expect(text).toMatch(/^TrueBatch API · Batch record TA\d{6} · PRD-001 Examplol 100 mg film-coated tablets/);
+    expect(text).toMatch(/^TrueBatch API · Batch record TA\d{6} · API-001 Examplone hydrochloride/);
     expect(text).toContain('Status | In production');
     expect(text).toContain('Changed values | marked CHANGED');
     expect(text).toContain('Tare weight: 0.849 kg  CHANGED');
     expect(text).toMatch(/was ~0\.850 kg~ · reason: Tare misread · ASHA, \d+ \w+ 2026, \d\d:\d\d IST/);
     // A figure leads, its worked line follows (17 Nov 2026 run, F30): one verdict, on its own line.
-    expect(text).toContain('Net weight: 10.151 kg\n11.000 kg − 0.849 kg = 10.151 kg');
+    expect(text).toContain('Net weight: 80.851 kg\n81.700 kg − 0.849 kg = 80.851 kg');
     // The label questions typed by hand by their labels, never their names.
     expect(text).toContain('Balance: the calibration label is in date: yes');
     expect(text).not.toMatch(/\b(?:balance|lot|machine|room)\.[a-zA-Z]/);
@@ -302,10 +305,10 @@ describe('walking a stage', () => {
     expect(text).not.toMatch(/ \(v\d+\)/);
     expect(text).not.toContain('within limits\nPASS');
     expect(text).toContain('FAIL: out of limits');
-    expect(text).toContain('MAT-001 · Examplol | API · intragranular | 100.0 | 10.000 kg | Lot API-2611: 10.151 kg (target');
+    expect(text).toContain('MAT-001 · Examplol acid | Step 1: condensation · starting material | 80.0 kg | 80.000 kg | Lot KSM-2611: 80.851 kg (target');
     expect(text).toMatch(/Checked: RAVI, .* IST · signed "Verified \(second person\)"/);
     expect(text).toMatch(/Sent back: RAVI, .* · reason: Tare looks wrong/);
-    expect(text).toMatch(/DEV-26-003 \(typed by hand\) \| Granulation · 2\.2 Weigh a material: Lactose monohydrate \| Lactose 0\.9 % over the corrected target \| ASHA, .* \| OPEN/);
+    expect(text).toMatch(/DEV-26-003 \(typed by hand\) \| Step 1: condensation · 2\.2 Weigh a material: Exampline \| Amine 0\.7 % over the corrected target \| ASHA, .* \| OPEN/);
     expect(text).toContain('This copy was made while the batch is in production: it is not a released record.');
     expect(text).toMatch(/Generated .* IST by VIEWER · true copy of the electronic record · page 1 of 3$/);
   });
@@ -334,7 +337,7 @@ describe('production approval, QC approval and QA release', () => {
   const batchAct = (who: string, action: string, body: object) => as(who, 'POST', `/api/batches/${id}/${action}`, body);
   const batchSign = async (who: string, action: string, extra: object = {}) => batchAct(who, action, { proof: proofFor(who), contentHash: (await full()).batch.contentHash, ...extra });
   beforeAll(async () => {
-    t.master.products_.push({ ...item('p', 'P', 'P'), strength: null, dosageForm: 'tablet' });
+    t.master.materials_.push({ ...item('p', 'P', 'P'), category: 'API', unit: 'kg' });
     t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' });
     // One pH check and the stage yield, checked by a second person.
     const doc = small([{ steps: [{}, { block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '0.100 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' } } }] }]);
@@ -436,15 +439,15 @@ describe('QA terminates a batch that cannot be finished (owner, 16 Nov 2026)', (
   const full = async (who = 'viewer') => (await as(who, 'GET', `/api/batches/${id}`)).json() as {
     batch: { status: string; contentHash: string; actions: string[]; terminated: { personName: string; payload: { reason: string } } | null; issued: object[] };
     steps: { actions: string[] }[]; timers: unknown[] };
-  const back = (value: string) => [{ lot: 'PVP-2611', value, unit: 'kg' }];
-  const terminate = async (who: string, extra: object = { reason: 'The stirrer broke down; the binder cannot be made', returns: back('0.250') }) =>
+  const back = (value: string) => [{ lot: 'NAOH-2611', value, unit: 'kg' }];
+  const terminate = async (who: string, extra: object = { reason: 'The stirrer broke down; the base solution cannot be made', returns: back('2.500') }) =>
     as(who, 'POST', `/api/batches/${id}/terminate`, { proof: proofFor(who), contentHash: (await full()).batch.contentHash, ...extra });
   const uses = () => t.owner.unsafe(`select equipment_code, ended_at from ${t.schema}_report.equipment_use_v1 where batch_number = (select batch_no from batches where id = $1)`, [id]);
   beforeAll(async () => {
     id = (await issue(await effectiveMaster())).id;
-    // The binder: weighed, then the stirrer in use and the mix running.
+    // The base solution: weighed, then the stirrer in use and the mix running.
     await act('asha', id, '0.1.0.1', 'start');
-    await act('asha', id, '0.1.0.1', 'record', { values: { lot: 'PVP-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), gross: '1.350', tare: '0.350' } });
+    await act('asha', id, '0.1.0.1', 'record', { values: { lot: 'NAOH-2611', ...handLabels('lot', 'lot'), balance: 'eq-bal', ...handLabels('balance', 'machine'), gross: '11.350', tare: '1.350' } });
     await sign('asha', id, '0.1.0.1', 'done');
     await sign('ravi', id, '0.1.0.1', 'check');
     await act('asha', id, '0.1.1.1', 'start');
@@ -463,16 +466,16 @@ describe('QA terminates a batch that cannot be finished (owner, 16 Nov 2026)', (
   });
 
   it('TA-21 terminating asks how much of each lot the batch used went back to stores unused: 0 up to what was used', async () => {
-    expect((await full('meera')).batch.issued).toEqual([{ lot: 'PVP-2611', material: expect.stringContaining('Povidone'), value: '1', unit: 'kg' }]);
+    expect((await full('meera')).batch.issued).toEqual([{ lot: 'NAOH-2611', material: expect.stringContaining('Sodium hydroxide'), value: '10', unit: 'kg' }]);
     const refused = async (returns?: object[]) => (await terminate('meera', { reason: 'x', ...(returns ? { returns } : {}) })).json() as { error: string; problems: string[] };
-    expect(await refused()).toMatchObject({ error: 'invalid_values', problems: ['Say how much of lot PVP-2611 (MAT-003 · Povidone K30) went back to stores unused: 0 if none.'] });
-    expect(await refused(back('1.5'))).toMatchObject({ problems: ['Lot PVP-2611: 1 kg was issued to this batch; 1.5 kg cannot have gone back to stores.'] });
+    expect(await refused()).toMatchObject({ error: 'invalid_values', problems: ['Say how much of lot NAOH-2611 (MAT-003 · Sodium hydroxide) went back to stores unused: 0 if none.'] });
+    expect(await refused(back('15'))).toMatchObject({ problems: ['Lot NAOH-2611: 10 kg was issued to this batch; 15 kg cannot have gone back to stores.'] });
     expect(await refused([...back('0'), { lot: 'MCC-1', value: '1', unit: 'kg' }])).toMatchObject({ problems: ['Lot MCC-1 (kg) was not issued to this batch.'] });
     expect((await terminate('meera', { reason: 'x', returns: back('-1') })).statusCode).toBe(400);
     expect((await full()).batch.status).toBe('in production');
     // In production the record says what is still to come.
     const live = await recordText(id);
-    for (const t of ['not weighed yet · 2.1 Weigh a material: Examplol', '1.2 Mix for a time\nin progress |', '2.1 Weigh a material: Examplol\nnot started |']) expect(live).toContain(t);
+    for (const t of ['not weighed yet · 2.1 Weigh a material: Examplol acid', '1.2 Mix for a time\nin progress |', '2.1 Weigh a material: Examplol acid\nnot started |']) expect(live).toContain(t);
   });
 
   it('TA-21 terminate frees the uses: a signed rejection; equipment_use_v1 ends every open use then, batch_fact_v1 says REJECTED', async () => {
@@ -481,16 +484,16 @@ describe('QA terminates a batch that cannot be finished (owner, 16 Nov 2026)', (
     const { eventId } = res.json() as { eventId: number };
     expect(await t.owner`select 1 from signatures where object_type = 'batch_event' and object_id = ${eventId} and meaning = 'rejected'`).toHaveLength(1);
     const [e] = await t.owner<{ at: Date; payload: object }[]>`select at, payload from batch_events where id = ${eventId}`;
-    expect(e!.payload).toEqual({ terminated: true, reason: 'The stirrer broke down; the binder cannot be made',
-      returns: [{ lot: 'PVP-2611', material: expect.stringContaining('Povidone'), value: '0.250', unit: 'kg' }] });
+    expect(e!.payload).toEqual({ terminated: true, reason: 'The stirrer broke down; the base solution cannot be made',
+      returns: [{ lot: 'NAOH-2611', material: expect.stringContaining('Sodium hydroxide'), value: '2.500', unit: 'kg' }] });
     // material_use_v1 gives back what went back to stores: MMS has it available again.
     expect(await t.owner.unsafe(`select lot_number, quantity::text, unit from ${t.schema}_report.material_use_v1 where batch_number = (select batch_no from batches where id = $1)`, [id]))
-      .toEqual([{ lot_number: 'PVP-2611', quantity: '0.750', unit: 'kg' }]);
+      .toEqual([{ lot_number: 'NAOH-2611', quantity: '7.500', unit: 'kg' }]);
     expect(await uses()).toEqual([{ equipment_code: 'STR-01', ended_at: e!.at }]);
     const [f] = await t.owner.unsafe(`select status, released_at, released_by from ${t.schema}_report.batch_fact_v1 where batch_number = (select batch_no from batches where id = $1)`, [id]);
     expect(f).toEqual({ status: 'REJECTED', released_at: null, released_by: null });
     const b = await full();
-    expect(b.batch).toMatchObject({ status: 'rejected', actions: [], terminated: { personName: 'MEERA', payload: { reason: 'The stirrer broke down; the binder cannot be made' } } });
+    expect(b.batch).toMatchObject({ status: 'rejected', actions: [], terminated: { personName: 'MEERA', payload: { reason: 'The stirrer broke down; the base solution cannot be made' } } });
     expect(b.steps.every((s) => !s.actions.length)).toBe(true);
     expect(b.timers).toEqual([]);
   });
@@ -508,10 +511,10 @@ describe('QA terminates a batch that cannot be finished (owner, 16 Nov 2026)', (
   it('TA-22 the PDF and the review show "Terminated by … at …: reason"', async () => {
     const text = await recordText(id);
     expect(text).toContain('Status | Rejected');
-    expect(text.match(/Terminated by MEERA at \d{1,2} \w{3} 20\d\d, \d\d:\d\d IST: The stirrer broke down; the binder cannot be made/g)).toHaveLength(2);
+    expect(text.match(/Terminated by MEERA at \d{1,2} \w{3} 20\d\d, \d\d:\d\d IST: The stirrer broke down; the base solution cannot be made/g)).toHaveLength(2);
     expect(text).toContain('Rejected | MEERA');
     // Nothing it never did reads as still to come (owner, 16 Nov 2026).
-    for (const t of ['not weighed (terminated) · 2.1 Weigh a material: Examplol', '1.2 Mix for a time\nterminated, not finished |', '2.1 Weigh a material: Examplol\nterminated, not started |']) expect(text).toContain(t);
+    for (const t of ['not weighed (terminated) · 2.1 Weigh a material: Examplol acid', '1.2 Mix for a time\nterminated, not finished |', '2.1 Weigh a material: Examplol acid\nterminated, not started |']) expect(text).toContain(t);
     expect(text).not.toMatch(/\byet\b|\nnot started|\nin progress/);
     const r = (await as('viewer', 'GET', `/api/batches/${id}/review`)).json() as { status: string; batchEvents: { kind: string; payload: object; personName: string }[] };
     expect(r).toMatchObject({ status: 'rejected', batchEvents: [{ kind: 'rejected', payload: { terminated: true }, personName: 'MEERA' }] });
@@ -521,7 +524,7 @@ describe('QA terminates a batch that cannot be finished (owner, 16 Nov 2026)', (
 describe('the timer job', () => {
   it('TA-17 a hold time that ran out is recorded late once, and blocks the using stage until a deviation note', async () => {
     const { id } = await issue(await effectiveMaster());
-    // The binder solution was made 25 hours ago (hold time 24 h).
+    // The base solution was made 25 hours ago (hold time 24 h).
     const [p] = await t.owner<{ id: string }[]>`select id from users where username = 'asha'`;
     const [r] = await t.owner<{ id: string }[]>`select id from users where username = 'ravi'`;
     await t.owner`insert into step_events (batch_id, stage, sub, step, round, kind, person_id, at) values
@@ -529,13 +532,13 @@ describe('the timer job', () => {
       (${id}, 0, 1, 0, 1, 'checked', ${r!.id}, now() - interval '26 hours'),
       (${id}, 0, 1, 1, 1, 'started', ${p!.id}, now() - interval '26 hours'), (${id}, 0, 1, 1, 1, 'done', ${p!.id}, now() - interval '25 hours')`;
     const b = await batch(id);
-    expect(b.stages[1]!.blocked).toBe('Hold time of binder solution (24 h) before Granulation ran out: a deviation note is needed');
+    expect(b.stages[1]!.blocked).toBe('Hold time of base solution (24 h) before Step 1: condensation ran out: a deviation note is needed');
     expect(b.steps.find((s) => s.id === '1.1.0.1')!.state).toBe('waiting');
     expect(await recordLate(t.sql)).toBeGreaterThanOrEqual(1);
     expect(await recordLate(t.sql)).toBe(0);
     expect(await t.owner`select 1 from step_events where batch_id = ${id} and kind = 'late' and payload->>'timer' = 'hold:0:1' and person_id is null`).toHaveLength(1);
     expect(await code(t.sql`insert into step_events (batch_id, stage, sub, step, round, kind, payload) values (${id}, 1, 1, 0, 1, 'late', '{"timer": "hold:0:1"}')`)).toBe('23505');
-    expect((await act('asha', id, '1.1.0.1', 'note', { text: 'Binder solution held 25 h; deviation raised' })).statusCode).toBe(200);
+    expect((await act('asha', id, '1.1.0.1', 'note', { text: 'Base solution held 25 h; deviation raised' })).statusCode).toBe(200);
     expect((await stepOf(id, '1.1.0.1')).state).toBe('open');
   });
 

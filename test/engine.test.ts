@@ -3,7 +3,8 @@ import {
   currentValues, doneProblems, evaluate, openSteps, parseKey, refusal, stepLabel, stepState, stepTitle, timers,
   type Action, type State, type StepEvent,
 } from '../shared/engine/index.js';
-import { at, ev, fail, pass, reading, small, tablet } from './engine-fixture.js';
+import { at, ev, fail, pass, reading, small, api } from './engine-fixture.js';
+import { lineQuantity } from '../shared/engine/values.js';
 
 const kinds = (s: string) => s.split(' ').filter(Boolean).map((k) => ev(k as StepEvent['kind'], '0.1.0.1'));
 const stateOf = (doc: ReturnType<typeof small>, events: StepEvent[], id: string, now = at(1000)) => {
@@ -283,14 +284,14 @@ describe('timers', () => {
 });
 
 describe('calculations come from the templates library', () => {
-  const doc = tablet();
+  const doc = api();
   const certificate = { assay: { value: '99.0', unit: '%' }, lod: { value: '0.5', unit: '%' } };
 
-  it('the API target is the potency-adjusted formula quantity (T8 then T9); net (T1) against it (C1)', () => {
-    const r = evaluate(doc, [], { stage: 1, sub: 1, step: 0, round: 1 }, { ...certificate, gross: { value: '12.000', unit: 'kg' }, tare: { value: '1.850', unit: 'kg' } });
-    // 100.0 mg × 100 000 = 10.000 kg; assay as is 99.0 × 99.5 ÷ 100 = 98.505 %; 10.000 × 100 ÷ 98.505 = 10.1518 kg
-    expect(r.target).toMatchObject({ ok: true, unit: 'kg', shown: '100.0 mg × 100000 tablets = 10.000 kg; then assay as is = 99.0 % × (100 − 0.5 %) ÷ 100 = 98.505 %; 10.000 kg × 100 ÷ 98.505 % = 10.152 kg' });
-    expect(r.net).toMatchObject({ ok: true, value: '10.15', shown: '12.000 kg − 1.850 kg = 10.150 kg' });
+  it('the starting material target is the potency-adjusted formula quantity (T9); net (T1) against it (C1)', () => {
+    const r = evaluate(doc, [], { stage: 1, sub: 1, step: 0, round: 1 }, { ...certificate, gross: { value: '82.214', unit: 'kg' }, tare: { value: '1.000', unit: 'kg' } });
+    // assay as is 99.0 × 99.5 ÷ 100 = 98.505 %; 80.000 × 100 ÷ 98.505 = 81.214 kg
+    expect(r.target).toMatchObject({ ok: true, unit: 'kg', shown: '80.0 kg per batch = 80.000 kg; then assay as is = 99.0 % × (100 − 0.5 %) ÷ 100 = 98.505 %; 80.000 kg × 100 ÷ 98.505 % = 81.214 kg' });
+    expect(r.net).toMatchObject({ ok: true, value: '81.214', shown: '82.214 kg − 1.000 kg = 81.214 kg' });
     expect(r.netCheck).toMatchObject({ ok: true, check: { pass: true } });
   });
 
@@ -300,75 +301,82 @@ describe('calculations come from the templates library', () => {
     expect(r.netCheck).toBeUndefined();
   });
 
-  it('the filler compensates the adjusted API (T10), from the target the API weighing recorded', () => {
-    const lactose = { stage: 1, sub: 1, step: 1, round: 1 };
-    expect(evaluate(doc, [], lactose, {}).target).toEqual({ ok: false, message: 'Weigh Examplol first: Lactose monohydrate compensates its adjusted quantity' });
-    const api = evaluate(doc, [], { stage: 1, sub: 1, step: 0, round: 1 }, certificate);
-    const events = [ev('value', '1.1.0.1', { payload: { values: certificate, results: api } })];
-    // 12.000 kg − (10.1518 − 10.000) = 11.848 kg
-    expect(evaluate(doc, events, lactose, {}).target).toMatchObject({ ok: true, unit: 'kg' });
-    expect(Number((evaluate(doc, events, lactose, {}).target as { value: string }).value).toFixed(3)).toBe('11.848');
+  it('TA-13 a reagent by equivalents (T28) is worked out on the planned key input, then on the starting material actually weighed', () => {
+    const amine = { stage: 1, sub: 1, step: 1, round: 1 };
+    const assay = { assay: { value: '100.0', unit: '%' } };
+    // 80.0 kg ÷ 200.0 = 400 mol × 1.10 eq × 150.0 g/mol = 66.000 kg
+    expect(evaluate(doc, [], amine, assay).target).toMatchObject({ ok: true, unit: 'kg', shown: expect.stringMatching(/^80\.0 kg ÷ 200\.0 g\/mol = 400\.000 mol × 1\.10 eq × 150\.0 g\/mol = 66\.000 kg \(on the planned Examplol acid 80\.0 kg\)/) });
+    const weighed = { ...certificate, gross: { value: '82.000', unit: 'kg' }, tare: { value: '1.000', unit: 'kg' } };
+    const ksm = evaluate(doc, [], { stage: 1, sub: 1, step: 0, round: 1 }, weighed);
+    const events = [ev('value', '1.1.0.1', { payload: { values: weighed, results: ksm } })];
+    // 81.000 kg ÷ 200.0 = 405 mol × 1.10 × 150.0 = 66.825 kg
+    const target = evaluate(doc, events, amine, assay).target as { value: string; shown: string };
+    expect(Number(target.value).toFixed(3)).toBe('66.825');
+    expect(target.shown).toMatch(/\(on the actual Examplol acid 81\.000 kg\)/);
   });
 
-  it('a setting can refer to an earlier step: the coating gain is on the mean core weight of compression (T5)', () => {
-    const compress = { weights: Array.from({ length: 20 }, () => ({ value: '250.0', unit: 'mg' })) };
-    const r1 = evaluate(doc, [], { stage: 2, sub: 1, step: 0, round: 1 }, compress);
-    const events = [ev('value', '2.1.0.1', { payload: { values: compress, results: r1 } })];
-    const gain = evaluate(doc, events, { stage: 3, sub: 2, step: 0, round: 1 }, { meanWeight: { value: '257.5', unit: 'mg' } }).gain;
-    expect(gain).toMatchObject({ ok: true, value: '3', check: { pass: true } });
+  it('T28 the molar theoretical yield of a stage, on its starting material; quantities per kg and equivalents of the next stage on its intermediate', () => {
+    expect(evaluate(doc, [], { stage: 1, sub: 1, step: 6, round: 1 }, {}).theoretical).toMatchObject({ ok: true, value: '132', shown: '80.0 kg ÷ 200.0 g/mol = 400.000 mol × 330.0 g/mol (theoretical) = 132.000 kg' });
+    const H = { stage: 2, sub: 1, step: 0, round: 1 };
+    const line = (k: string) => doc.formula.find((l) => l.key === k)!;
+    expect(lineQuantity(doc, [], H, line('ipa'), false, {})).toMatchObject({ ok: true, value: '480', unit: 'L' });
+    // 120.0 kg ÷ 330.0 = 363.636 mol × 1.05 × 36.46 g/mol = 13.921 kg ÷ 1.17 kg/L = 11.90 L
+    expect(lineQuantity(doc, [], H, line('hcl'), false, {})).toMatchObject({ ok: true, unit: 'L', shown: expect.stringMatching(/= 11\.90 L \(on the planned intermediate 1 120\.0 kg\)$/) });
+    const out = ev('value', '1.1.6.1', { payload: { values: { output: { value: '118.0', unit: 'kg' } }, results: {} } });
+    expect(lineQuantity(doc, [out], H, line('ipa'), false, {})).toMatchObject({ ok: true, value: '472', shown: '4.0 L/kg × 118.0 = 472.00 L (on the actual intermediate 1 118.0 kg)' });
   });
 });
 
 describe('corrections reach the steps that used the value', () => {
-  const doc = tablet();
-  const weights = (mg: string) => ({ weights: Array.from({ length: 20 }, () => ({ value: mg, unit: 'mg' })) });
-  const compress = { stage: 2, sub: 1, step: 0, round: 1 };
-  const coat = { stage: 3, sub: 1, step: 0, round: 1 };
-  const mean = { meanWeight: { value: '257.5', unit: 'mg' } };
-  const recorded = ev('value', '2.1.0.1', { payload: { values: weights('250.0'), results: evaluate(doc, [], compress, weights('250.0')) } });
-  const compressed = [ev('started', '2.1.0.1'), recorded, ev('done', '2.1.0.1')];
+  const doc = api();
+  const assay = { assay: { value: '100.0', unit: '%' } };
+  const ksmKey = { stage: 1, sub: 1, step: 0, round: 1 };
+  const amineKey = { stage: 1, sub: 1, step: 1, round: 1 };
+  const cert = { assay: { value: '99.0', unit: '%' }, lod: { value: '0.5', unit: '%' } };
+  const ksm = (gross: string) => ({ ...cert, gross: { value: gross, unit: 'kg' }, tare: { value: '1.000', unit: 'kg' } });
+  const recorded = ev('value', '1.1.0.1', { payload: { values: ksm('82.000'), results: evaluate(doc, [], ksmKey, ksm('82.000')) } });
+  const weighed = [ev('started', '1.1.0.1'), recorded, ev('done', '1.1.0.1')];
   const uses: number[] = [];
-  const coatResults = evaluate(doc, compressed, coat, mean, uses);
-  const coated = [...compressed, ev('started', '3.1.0.1'), ev('value', '3.1.0.1', { payload: { values: mean, results: coatResults, uses } }), ev('done', '3.1.0.1')];
+  // 66.825 kg of the amine on 81.000 kg of starting material
+  const amine = { ...assay, gross: { value: '67.825', unit: 'kg' }, tare: { value: '1.000', unit: 'kg' } };
+  const amineResults = evaluate(doc, weighed, amineKey, amine, uses);
+  const both = [...weighed, ev('started', '1.1.1.1'), ev('value', '1.1.1.1', { payload: { values: amine, results: amineResults, uses } }), ev('done', '1.1.1.1')];
   const fix = (events: StepEvent[], kind: 'corrected' | 'value') =>
-    ev(kind, '2.1.0.1', { person: 4, payload: { values: weights('251.0'), results: evaluate(doc, events, compress, weights('251.0')), reason: 'Weights typed from the wrong sheet' } });
-  const corrected = [...coated, fix(coated, 'corrected')];
-  const coatView = (events: StepEvent[]) => openSteps(doc, events, at(1000)).steps.find((s) => s.id === '3.1.0.1')!;
+    ev(kind, '1.1.0.1', { person: 4, payload: { values: ksm('81.000'), results: evaluate(doc, events, ksmKey, ksm('81.000')), reason: 'Gross weight typed from the wrong ticket' } });
+  const corrected = [...both, fix(both, 'corrected')];
+  const amineView = (events: StepEvent[]) => openSteps(doc, events, at(1000)).steps.find((s) => s.id === '1.1.1.1')!;
 
   it('each result keeps the events it was worked out from', () => {
     expect(uses).toEqual([recorded.id]);
-    expect(coatView(coated)).toMatchObject({ state: 'done', needsResign: false, inputChanged: [] });
+    expect(amineView(both)).toMatchObject({ state: 'done_awaiting_check', needsResign: false, inputChanged: [] });
   });
 
   it.each<[string, StepEvent[], string, boolean, number]>([
-    ['nothing changed since', coated, 'done', false, 0],
-    ['the mean core weight was corrected after the coating used it', corrected, 'in_progress', true, 1],
-    ['a correction before the coating used it', [...compressed, fix(compressed, 'corrected')], 'waiting', false, 0],
-  ])('TA-06 %s → coating %s, sign again %s, %d input change(s)', (_what, events, state, resign, changes) => {
-    const v = coatView(events);
+    ['nothing changed since', both, 'done_awaiting_check', false, 0],
+    ['the starting material weight was corrected after the amine target used it', corrected, 'in_progress', true, 1],
+  ])('TA-06 %s → amine weighing %s, sign again %s, %d input change(s)', (_what, events, state, resign, changes) => {
+    const v = amineView(events);
     expect([v.state, v.needsResign, v.inputChanged.length]).toEqual([state, resign, changes]);
   });
 
   it('TA-06 the stale step shows the result worked out again (not stored), which input changed and by whom; signing again stores it', () => {
-    const v = coatView(corrected);
-    expect(v.inputChanged).toMatchObject([{ kind: 'corrected', person: 4, stage: 2, step: 0, payload: { reason: 'Weights typed from the wrong sheet' } }]);
-    // (257.5 − 251.0) ÷ 251.0 × 100 = 2.59 %: now below the 2.8 % limit.
-    expect(v.results.gain).toMatchObject({ ok: true, check: { pass: false } });
-    expect(currentValues(v.events).results.gain).toMatchObject({ value: '3', check: { pass: true } });
+    const v = amineView(corrected);
+    expect(v.inputChanged).toMatchObject([{ kind: 'corrected', person: 4, stage: 1, step: 0, payload: { reason: 'Gross weight typed from the wrong ticket' } }]);
+    // On 80.000 kg the target is 66.000 kg: the 66.825 kg weighed is now 1.25 % over, outside ± 0.5 %.
+    expect(v.results.netCheck).toMatchObject({ ok: true, check: { pass: false } });
+    expect(currentValues(v.events).results.netCheck).toMatchObject({ check: { pass: true } });
     const again: number[] = [];
-    const resigned = [...corrected, ev('done', '3.1.0.1', { payload: { results: evaluate(doc, corrected, coat, mean, again), uses: again } })];
-    expect(coatView(resigned)).toMatchObject({ state: 'done', needsResign: false, inputChanged: [], results: { gain: { check: { pass: false } } } });
-    // The stop check now fails: the next coating round opens.
-    expect(openSteps(doc, resigned, at(1000)).steps.find((s) => s.id === '3.1.0.2')!.state).toBe('open');
+    const resigned = [...corrected, ev('done', '1.1.1.1', { payload: { results: evaluate(doc, corrected, amineKey, amine, again), uses: again } })];
+    expect(amineView(resigned)).toMatchObject({ state: 'done_awaiting_check', needsResign: false, inputChanged: [], results: { netCheck: { check: { pass: false } } } });
   });
 
   it('TA-06 a checked step goes back for signing and checking again; a correction of the step that used it does not count', () => {
-    const checked = [...coated.slice(0, -1), ev('done', '3.1.0.1'), ev('checked', '3.1.0.1', { person: 2 })];
+    const checked = [...both.slice(0, -1), ev('done', '1.1.1.1'), ev('checked', '1.1.1.1', { person: 2 })];
     const changed = [...checked, fix(checked, 'corrected')];
-    expect(stepState(changed.filter((e) => e.stage === 3), true).state).toBe('checked');
-    expect(coatView(changed)).toMatchObject({ state: 'in_progress', needsResign: true });
-    const ownFix = ev('corrected', '3.1.0.1', { payload: { values: mean, results: evaluate(doc, changed, coat, mean, []), uses: [changed.at(-1)!.id], reason: 'Re-weighed' } });
-    expect(coatView([...changed, ownFix]).inputChanged).toEqual([]);
+    expect(stepState(changed.filter((e) => e.stage === 1 && e.step === 1), true).state).toBe('checked');
+    expect(amineView(changed)).toMatchObject({ state: 'in_progress', needsResign: true });
+    const ownFix = ev('corrected', '1.1.1.1', { payload: { values: amine, results: evaluate(doc, changed, amineKey, amine, []), uses: [changed.at(-1)!.id], reason: 'Re-weighed' } });
+    expect(amineView([...changed, ownFix]).inputChanged).toEqual([]);
   });
 });
 
@@ -419,16 +427,16 @@ describe('repeat-until: no further change from the previous round (F2)', () => {
 });
 
 describe('yield accountability (T4)', () => {
-  const values = { output: { value: '24.500', unit: 'kg' }, samples: { value: '0.200', unit: 'kg' }, rejects: { value: '0.100', unit: 'kg' } };
+  const values = { output: { value: '98.000', unit: 'kg' }, samples: { value: '0.800', unit: 'kg' }, rejects: { value: '0.400', unit: 'kg' } };
   const key = { stage: 2, sub: 1, step: 1, round: 1 };
   it.each([
     ['with accountability limits', true],
     ['without accountability limits', false],
   ])('TA-18 yield and accountability are worked out %s; the limits only add the check', (_what, limits) => {
-    const doc = tablet();
+    const doc = api();
     if (!limits) delete doc.stages[2]!.steps[1]!.settings.accountabilityLimit;
     const r = evaluate(doc, [], key, values);
-    // (24.500 + 0.200 + 0.100) ÷ 25.000 × 100 = 99.20 %; yield 24.500 ÷ 25.000 × 100 = 98.00 %
+    // (98.000 + 0.800 + 0.400) ÷ 100.000 × 100 = 99.20 %; yield 98.000 ÷ 100.000 × 100 = 98.00 %
     expect(r.accountability).toMatchObject({ ok: true, value: '99.2' });
     expect((r.accountability as { check?: unknown }).check !== undefined).toBe(limits);
     expect(r.yield).toMatchObject({ ok: true, value: '98', check: { pass: true } });
@@ -437,9 +445,9 @@ describe('yield accountability (T4)', () => {
 
 describe('steps as people name them', () => {
   it('a step is named by the master, or by its block and material; a waiting step names the step it waits for, never its key', () => {
-    const doc = tablet();
-    expect(stepTitle(doc, doc.stages[1]!.steps[0]!)).toBe('Weigh a material: Examplol');
-    expect(stepLabel(doc, { stage: 1, sub: 1, step: 4, round: 2 })).toBe('Granulation › Dry to an LOD limit (round 2)');
+    const doc = api();
+    expect(stepTitle(doc, doc.stages[1]!.steps[0]!)).toBe('Weigh a material: Examplol acid');
+    expect(stepLabel(doc, { stage: 1, sub: 1, step: 4, round: 2 })).toBe('Step 1: condensation › Dry to an LOD limit (round 2)');
     const named = small([{ steps: [{ name: 'Punch and die check — before compression', checker: true }, {}] }]);
     expect(stepTitle(named, named.stages[0]!.steps[0]!)).toBe('Punch and die check — before compression');
     const v = openSteps(named, [ev('started', '0.1.0.1'), ev('done', '0.1.0.1')], at(10)).steps.find((x) => x.id === '0.1.1.1')!;

@@ -14,15 +14,17 @@ export const limitSchema = z.object({
   alertLow: z.string().optional(), alertHigh: z.string().optional(),
 }).strict();
 
-// A step setting: a value as written ("0.5", "250.0 mg"), a limit, or a reference to an earlier step's field or
-// calculation ("stage/step/name"), to a formula line (its batch quantity, adjusted when asked) or to the header.
-export const HEADER_VALUES = ['batchSize', 'coreWeight', 'coatedWeight', 'coreBatch', 'coatedBatch'] as const;
+// A step setting: a value as written ("0.5", "250.0 kg"), a limit, or a reference to an earlier step's field or
+// calculation ("stage/step/name"), to a formula line (its batch quantity, adjusted when asked), to the header (the
+// expected API in kg) or to the molar theoretical yield of the step's stage (T28).
+export const HEADER_VALUES = ['batchSize'] as const;
 export const settingValueSchema = z.union([
   text(),
   limitSchema,
   z.object({ ref: z.string().regex(/^[a-z0-9-]+\/[a-z0-9-]+\/[a-zA-Z0-9]+$/, 'stage/step/name') }).strict(),
   z.object({ formula: keySchema, adjusted: z.boolean().optional() }).strict(),
   z.object({ header: z.enum(HEADER_VALUES) }).strict(),
+  z.object({ molar: z.literal(true) }).strict(),
 ]);
 
 const flowSchema = z.discriminatedUnion('kind', [
@@ -49,11 +51,9 @@ export const stepSchema = z.object({
   everyMinutes: z.number().int().positive().max(10_000).optional(),
   // F6 with a changing interval: after `afterMinutes` from the first round, a round every `everyMinutes` (F0030).
   everyMinutesLater: z.object({ afterMinutes: z.number().int().positive().max(10_000), everyMinutes: z.number().int().positive().max(10_000) }).strict().optional(),
-  // F4 by a rule: the step is done only when a header value is within the limit (F0040: the bag premix only for a
-  // batch of at most 50 kg); otherwise it is not applicable, with no operator choice.
-  onlyIf: z.object({ header: z.enum(['batchSize', 'coreBatch']), limit: limitSchema }).strict().optional(),
-  // A spray of a liquid made in excess: the amount of liquid to apply per amount charged (F0339: 971 g per 150 g).
-  applyPerCharge: z.object({ liquid: text(40), charge: text(40) }).strict().optional(),
+  // F4 by a rule: the step is done only when the batch size is within the limit; otherwise it is not applicable, with
+  // no operator choice.
+  onlyIf: z.object({ header: z.enum(['batchSize']), limit: limitSchema }).strict().optional(),
   // Order-critical: this step must come after the step with this key in the same stage (F0318: the drug after the PVP).
   orderAfter: keySchema.optional(),
   flow: flowSchema.default({ kind: 'none' }),
@@ -70,7 +70,13 @@ export const stageSchema = z.object({
   roomTypes: z.array(text()).max(20).default([]),
   machineTypes: z.array(text()).max(50).default([]),
   role: text().default(''),
-  produces: z.object({ name: text().min(1), holdHours: z.number().positive().max(100_000).optional() }).strict().optional(),
+  // The intermediate the stage makes: its hold time, its molecular weight (T28: the molar theoretical yield, and the
+  // equivalents of the stage that uses it), the quantity expected (kg: the planned input of the stage that uses it)
+  // and the product molecules per molecule of the key input (default 1).
+  produces: z.object({
+    name: text().min(1), holdHours: z.number().positive().max(100_000).optional(),
+    mw: decimal.optional(), expectedKg: decimal.optional(), perMol: decimal.optional(),
+  }).strict().optional(),
   // Stages whose intermediate this stage uses (preparations must be closed first; their hold time ends here).
   uses: z.array(keySchema).max(20).default([]),
   steps: z.array(stepSchema).max(200),
@@ -82,24 +88,32 @@ const form = z.object({
   charge: z.number().int().min(1).max(4).optional(),
 }).strict();
 
+export const ROLES = ['starting material', 'reagent', 'solvent', 'catalyst', 'processing aid', 'packing material'] as const;
+// The units of a formula line's quantity: per batch (kg, L, or a count of units: drums, liners, labels), or per kg of
+// the stage's key input ("volumes").
+export const LINE_UNITS = ['kg', 'L', 'units', 'L/kg', 'kg/kg'] as const;
+/**
+ * A formula line (TrueBatch API, plan 3c.2): one material charged in one stage, as a quantity per batch (kg or L), per
+ * kg of the stage's key input, or in molar equivalents of the key input (T28). The key input of a stage is its
+ * starting material, or the intermediate of the stage it uses (that needs no line).
+ */
 export const lineSchema = z.object({
   key: keySchema,
   materialItemId: z.string().min(1).max(100),
   code: text(),
   name: text(),
-  mgPerTablet: decimal,
-  // A solvent is removed in processing (granulation water) and is not part of the tablet weight.
-  role: z.enum(['api', 'excipient', 'solvent']),
-  place: z.enum(['intragranular', 'extragranular', 'binder', 'coating']),
-  layer: z.number().int().min(1).max(10).optional(),
-  // The API's label claim per tablet ("20 mg", "10 mEq"), on the basis the label-basis answer gives; checked, never used.
-  labelClaim: text(40).optional(),
-  // A batch quantity as written in the source ("120.000 kg"); only checked against mg per tablet × batch size (T8).
-  batchQuantity: text(40).optional(),
-  // Settings of the adjustment templates, applied in this order: T11 salt factor, T9 potency or T18 content, T16
-  // overage; or, for a filler, T10 compensation of the named lines.
+  stage: keySchema,
+  role: z.enum(ROLES),
+  quantity: decimal.optional(),
+  unit: z.enum(LINE_UNITS).optional(),
+  eq: decimal.optional(),
+  // g/mol: of the starting material (its moles), of a line charged by equivalents.
+  mw: decimal.optional(),
+  // kg/L: a liquid charged by volume.
+  density: decimal.optional(),
+  // Settings of the adjustment templates, applied in this order: T11 salt factor, T9 potency or T18 content, T16 overage.
   adjust: z.object({
-    // `factor`: the salt factor as written in the formula; only checked against the molecular weights, never used.
+    // `factor`: the salt factor as written; only checked against the molecular weights, never used.
     salt: z.object({ from: form, to: form, factor: decimal.optional() }).strict().optional(),
     potency: z.object({
       basis: z.enum(['as is', 'anhydrous', 'dried', 'ignited', 'anhydrous and solvent-free']),
@@ -110,27 +124,23 @@ export const lineSchema = z.object({
     }).strict().optional(),
     content: z.object({
       formulaQuantityIs: z.enum(['dry', 'wet']), nominalContent: z.string().optional(), contentSource: z.enum(['certificate', 'in-process result']).optional(),
-      // What an in-process result is: the content, or a relative assay in % of theoretical (F0205).
       resultType: z.enum(['content', 'percent of theoretical']).optional(),
     }).strict().optional(),
     overage: z.object({ percent: decimal, maxPercent: decimal.optional() }).strict().optional(),
-    compensates: z.array(keySchema).max(20).optional(),
   }).strict().optional(),
 }).strict();
 
+/** The API master's header (plan 3c.1): the API as a material of master data, the API expected in kg, its retest period. */
 export const headerSchema = z.object({
   productItemId: z.string().min(1).max(100),
   productCode: text(),
   productName: text(),
-  batchSize: z.string().regex(/^[1-9]\d{0,9}$/, 'a whole number of tablets'),
-  coreWeightMg: decimal,
-  coatedWeightMg: decimal.optional(),
-  // The die bore area from the tooling record, to check that the target weight fits the tooling (F0135).
-  dieAreaMm2: decimal.optional(),
-  // Other strengths compressed from the same blend at their own core weight (F0225, F0366).
-  otherStrengths: z.array(z.object({ name: text().min(1), labelClaim: text(40), coreWeightMg: decimal }).strict()).max(10).optional(),
-  // TA-11: the rooms of master data (codes) where this product's materials are weighed; a balance is offered there or
-  // in a room the stage allows (shared/engine/picks.ts). A version made before this setting has none.
+  batchSize: decimal,
+  // g/mol of the API as isolated (salt, hydrate): the molar theoretical yield of the last stage (T28).
+  mw: decimal.optional(),
+  // TA-27: the retest date is the date of manufacture + this period, never typed.
+  retestMonths: z.number().int().min(1).max(120),
+  // TA-11: the rooms of master data (codes) where the materials are weighed.
   dispensingRooms: z.array(text()).max(20).optional(),
 }).strict();
 

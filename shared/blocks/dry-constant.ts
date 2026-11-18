@@ -6,7 +6,7 @@ export const dryConstant: Block = {
   id: 'dry-constant', version: 1, name: 'Dry to constant weight', checker: false, stop: 'constant',
   instruction: 'Dry, cool and weigh the sample, and record its weight.',
   fields: [
-    { name: 'machine', label: 'Dryer or oven', kind: 'machine', types: ['dryer', 'drier', 'fbd', 'fluid bed', 'oven'] },
+    { name: 'machine', label: 'Dryer or oven', kind: 'machine', types: ['dryer', 'drier', 'fbd', 'fluid bed', 'rcvd', 'oven'] },
     { name: 'weight', label: 'Sample weight', kind: 'number', unit: 'g' },
   ],
   settings: [{ name: 'maxChange', label: 'Largest change between rounds', kind: 'quantity' }],

@@ -60,7 +60,7 @@ export function BatchHeader({ d }: { d: BatchDetail }) {
         <h1>{h.productName}</h1>
         <div className="meta">
           <span>Product <b>{h.productCode}</b></span>
-          {<span>Batch size <b>{Number(h.batchSize).toLocaleString('en-IN')} tablets</b></span>}
+          {<span>Batch size <b>{h.batchSize} kg of API</b></span>}
           <span>Master version <b>{d.master.versionNo}</b></span>
           <span>Issued <b>{plainClock(d.batch.issuedAt)}</b></span>
         </div>

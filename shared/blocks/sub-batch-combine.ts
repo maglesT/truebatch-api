@@ -7,7 +7,7 @@ export const subBatchCombine: Block = {
   id: 'sub-batch-combine', version: 1, name: 'Combine the sub-batches', checker: true,
   instruction: 'Check the label of each sub-batch container and record its net weight. Load them all into the blender and record the combined weight.',
   fields: [
-    { name: 'machine', label: 'Blender', kind: 'machine', types: ['blend', 'bin'] },
+    { name: 'machine', label: 'Blender or vessel', kind: 'machine', types: ['blend', 'bin', 'vessel'] },
     ...subs.map((n) => ({ name: `sub${n}`, label: `Sub-batch ${n}`, kind: 'number' as const, unit: 'kg', ...(n > 2 ? { optional: true } : {}) })),
     { name: 'output', label: 'Combined weight', kind: 'number', unit: 'kg' },
   ],

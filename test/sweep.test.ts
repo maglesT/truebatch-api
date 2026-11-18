@@ -7,45 +7,25 @@ import { BLOCKS, findBlock, type Block } from '../shared/blocks/index.js';
 import { evaluate, type StepEvent, type Value } from '../shared/engine/index.js';
 import { masterChecks } from '../shared/master/checks.js';
 import { masterSchema, type MasterDoc, type Step } from '../shared/master/schema.js';
-import { at, ev, tablet } from './engine-fixture.js';
+import { at, ev, api } from './engine-fixture.js';
 
 const pct = (low: string, high: string) => ({ low, high, unit: '%' });
-const minutes = { low: '10', high: '12', unit: 'min' };
-const weights = { meanLimit: { low: '95.0', high: '105.0', unit: 'mg' }, weightBand: '5.0', weightOuterBand: '10.0', hardnessLimit: { low: '40', high: '80', unit: 'N' },
-  thicknessLimit: { low: '2.8', high: '3.2', unit: 'mm' } };
 // Every setting of every block that has settings, optional ones too.
 const SETTINGS: Record<string, Step['settings']> = {
   weigh: { target: { formula: 'x', adjusted: true }, tolerance: '0.5' },
   charge: { material: { formula: 'x' } },
-  sift: { sieve: '40 mesh (425 µm)' },
-  'binder-solution': { binder: { formula: 'x' }, binder2: '0.020 kg', binder3: '0.010 kg', targetSolids: '10 %', tolerance: '1.0', mixTimeLimit: minutes },
-  'coating-suspension': { powder: { formula: 'x' }, targetSolids: '12 %', tolerance: '1.0', mixTimeLimit: minutes },
-  'dry-mix': { speedLimit: { low: '10', high: '20', unit: 'rpm' }, mixTimeLimit: minutes },
+  'charge-liquid': { target: { formula: 'x' }, unit: 'kg', tolerance: '1.0', additionTimeLimit: { low: '10', high: '30', unit: 'min' }, temperatureLimit: { high: '30', unit: '°C' } },
   mix: { speedLimit: { low: '10', high: '20', unit: 'rpm' } },
-  granulate: { endPointLimit: { low: '8.0', high: '12.0', unit: 'kW' } },
+  react: { temperatureLimit: { low: '75', high: '85', unit: '°C' }, pressureBasis: 'gauge (bar g)', pressureLimit: { low: '0', high: '2', unit: 'bar' }, phLimit: { low: '6', high: '8', unit: 'pH' },
+    ipcUnit: '%', ipcLimit: { high: '1.0', unit: '%' } },
   dry: { lodLimit: { high: '2.0', unit: '%' } },
   'dry-constant': { maxChange: '0.5 g' },
-  lubricate: { lubricant: { formula: 'x' }, granuleWeight: '0.098 kg', theoretical: '0.100 kg', window: pct('90.0', '102.0'), tolerance: '1.0', mixTimeLimit: minutes },
   'sub-batch-combine': { accountabilityLimit: pct('99.0', '100.5') },
-  'blend-uniformity': { meanLimit: pct('90.0', '110.0'), rsdLimit: { high: '5.0', unit: '%' }, individualLimit: pct('85.0', '115.0') },
-  'density-flow': { carrLimit: { high: '20', unit: '%' }, hausnerLimit: { high: '1.25', unit: '' }, reposeLimit: { high: '40', unit: '°' } },
   'sieve-analysis': { sieve1: '850 µm', sieve2: '425 µm', sieve3: '250 µm', sieve4: '180 µm', sieve5: '150 µm', finesBelow: '150 µm', finesLimit: { high: '20.0', unit: '%' },
     recoveryLimit: pct('98.0', '102.0') },
-  'press-setup': { toolingType: '8.0 mm round', pressureLimit: { low: '100', high: '250', unit: 'MPa' }, speedLimit: { low: '10', high: '60', unit: 'rpm' } },
-  'compression-release': weights,
-  compress: weights,
-  friability: { lossLimit: { high: '1.0', unit: '%' } },
-  disintegration: { maxTime: '15', temperatureLimit: { low: '35', high: '39', unit: '°C' } },
-  'uniformity-by-weight': { coating: 'uncoated', labelClaim: '50 mg' },
-  'content-uniformity': { coating: 'uncoated' },
-  coat: { coreWeight: { header: 'coreWeight' }, gainLimit: pct('2.8', '3.2') },
-  'spray-coat': { coreWeight: { header: 'coreWeight' }, base: 'start', gainLimit: pct('2.8', '3.2'), inletLimit: { low: '50', high: '70', unit: '°C' },
-    bedLimit: { low: '35', high: '45', unit: '°C' }, sprayRateLimit: { low: '50', high: '150', unit: 'g/min' } },
-  'polish-print': { print: 'Logo in black' },
-  check: { what: 'Weight', unit: 'mg', limit: { low: '95', high: '105', unit: 'mg' } },
-  'qa-sample': { sampleLimit: { low: '50', high: '60', unit: 'tablets' } },
-  'stage-yield': { theoretical: { header: 'coreBatch' }, yieldLimit: pct('97.0', '100.5'), accountabilityLimit: pct('99.0', '100.5') },
-  'tablet-reconciliation': { theoretical: { header: 'batchSize' }, meanWeight: '100.0 mg', yieldLimit: pct('97.0', '100.5'), accountabilityLimit: pct('99.0', '100.5') },
+  check: { what: 'Water by KF', unit: '%', limit: { high: '0.5', unit: '%' } },
+  'qa-sample': { sampleLimit: { low: '50', high: '60', unit: 'g' } },
+  'stage-yield': { theoretical: { molar: true }, yieldLimit: pct('85.0', '100.5'), accountabilityLimit: pct('99.0', '100.5') },
   'pack-material-issue': { material: { formula: 'x' }, unit: 'units' },
   'printed-reconciliation': { material: { formula: 'x' }, unit: 'units', issued: '100 units' },
 };
@@ -87,8 +67,8 @@ function crashes(doc: MasterDoc, all: boolean): string[] {
   return out;
 }
 
-const header = { productItemId: 'p', productCode: 'P', productName: 'P', batchSize: '1000', coreWeightMg: '100.0', coatedWeightMg: '103.0', dispensingRooms: ['DSP-01'] };
-const formula = [{ key: 'x', materialItemId: 'm', code: 'M', name: 'M', mgPerTablet: '100.0', role: 'api', place: 'intragranular',
+const header = { productItemId: 'p', productCode: 'P', productName: 'P', batchSize: '100.0', mw: '300.0', retestMonths: 24, dispensingRooms: ['DSP-01'] };
+const formula = [{ key: 'x', materialItemId: 'm', code: 'M', name: 'M', stage: 's', role: 'starting material', quantity: '100.0', unit: 'kg', mw: '250.0',
   adjust: { potency: { basis: 'as is', standardIs: 'anhydrous' }, overage: { percent: '2' } } }];
 /** A small master of one block with all its settings set. */
 function using(b: Block): MasterDoc {
@@ -104,7 +84,7 @@ describe('the sweep: no template crashes on any block or test master', () => {
     expect(masterChecks(using(b)).filter((p) => /every reading would be refused/.test(p.message))).toEqual([]);
   });
 
-  it.each([['tablet', tablet()]] as const)('the %s test master', (_name, doc) => {
+  it.each([['API', api()]] as const)('the %s test master', (_name, doc) => {
     for (const all of [false, true]) expect(crashes(doc, all)).toEqual([]);
     expect(masterChecks(doc).filter((p) => /every reading would be refused/.test(p.message))).toEqual([]);
   });

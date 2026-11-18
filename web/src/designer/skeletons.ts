@@ -1,14 +1,9 @@
-// Process skeletons a new master may start from: the usual stages and steps of a process, as data. Settings that
-// depend on the product (which material a step weighs, its limits) are left for the author; the master check lists
-// them. Tablet-weight limits start at ± 5 % of the header's core weight. Every stage is worked in a room, so each
-// starts with line clearance (TA-10). A later stage's yield is on the actual input of the stage (the previous stage's
-// output), unless the stage adds materials (blending: on the core batch weight); the coating gain is on the batch's
-// actual core mean weight, and the granulation end point is checked by a second person. A new master names no
-// dispensing rooms: the author picks them (Header.tsx). A stage starts with the rooms it usually runs in, by the usual
-// area names; a stage whose rooms differ from plant to plant (a binder or coating suspension, blending) is left for
-// the author: the master check asks for its rooms (TA-11).
+// Process skeletons a new master may start from (plan section 4): the usual stages and steps of an API process, as
+// data. Settings that depend on the product (which material a step weighs, its limits) are left for the author; the
+// master check lists them. Every stage is worked in a room, so each starts with line clearance (TA-10). Pack and label
+// is the last stage of every skeleton (owner, 18 Nov 2026); its yield is on the output of the stage before it. A stage
+// starts with the rooms it usually runs in, by the usual area names; the master check asks for the rest (TA-11).
 import { findBlock } from '../../../shared/blocks/index.js';
-import { Dec } from '../../../shared/templates/index.js';
 import type { MasterDoc, SettingValue, Stage, Step } from '../../../shared/master/schema.js';
 import { stepFrom } from './model.js';
 
@@ -16,60 +11,28 @@ type Header = MasterDoc['header'];
 interface StepPlan { block: string; key?: string; name?: string; checker?: boolean; settings?: (h: Header) => Record<string, SettingValue>; minMinutes?: number }
 interface StagePlan { key: string; name: string; kind?: Stage['kind']; role: string; rooms?: string[]; produces?: [string, number]; uses?: string[]; steps: StepPlan[] }
 
-const pct = (h: Header, mg: string, by: string) => new Dec(mg).times(new Dec(100).plus(by)).div(100).toFixed(1);
-const yieldStep = (theoretical: SettingValue): StepPlan => ({ block: 'stage-yield', key: 'yield', settings: () => ({
-  theoretical, yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } }) });
-const weighStep = (key: string): StepPlan => ({ block: 'weigh', key });
-const compressStep: StepPlan = { block: 'compress', settings: (h) => ({
-  meanLimit: { low: pct(h, h.coreWeightMg, '-5'), high: pct(h, h.coreWeightMg, '5'), unit: 'mg' }, weightBand: '5.0', weightOuterBand: '10.0' }) };
-// TA-16: the tooling is checked before and after compression; friability and disintegration are tested on the cores;
-// the tablets are reconciled at the end.
-const tooling = (key: string, name: string): StepPlan => ({ block: 'punch-die-check', key, name });
-const reconcile: StepPlan = { block: 'tablet-reconciliation', key: 'yield', settings: () => ({ theoretical: { header: 'batchSize' },
-  meanWeight: { ref: 'compression/compress/meanWeight' }, yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } }) };
-const compression = [tooling('tooling-before', 'Punch and die check — before compression'), compressStep,
-  { block: 'friability', settings: () => ({ lossLimit: { high: '1.0', unit: '%' } }) }, { block: 'disintegration', settings: () => ({ maxTime: '15' }) },
-  tooling('tooling-after', 'Punch and die check — after compression'), reconcile];
+const yieldStep = (theoretical: SettingValue, low = '90.0'): StepPlan => ({ block: 'stage-yield', key: 'yield', settings: () => ({
+  theoretical, yieldLimit: { low, high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } }) });
+const sample = (key: string, name: string): StepPlan => ({ block: 'qa-sample', key, name });
 
-// Wet granulation: binder solution, granulation and drying, blending with the extragranular materials and the
-// lubricant, compression. Blending adds materials to the granules, so its yield is on the theoretical core batch weight
-// (the granules' output alone would leave out what the stage adds and read above 100 %; the master check refuses it).
-const WET: StagePlan[] = [
-  { key: 'binder', name: 'Binder solution', kind: 'preparation', role: 'Granulation operator', produces: ['binder solution', 24],
-    steps: [weighStep('weigh-binder'), { block: 'binder-solution' }] },
-  { key: 'granulation', name: 'Granulation', role: 'Granulation operator', rooms: ['Granulation'], produces: ['dried granules', 72], uses: ['binder'],
-    steps: [weighStep('weigh-api'), { block: 'sift' }, { block: 'charge', key: 'charge-api' }, { block: 'dry-mix' }, { block: 'granulate', checker: true }, { block: 'dry' },
-      { block: 'sieve', key: 'mill' }, yieldStep('')] },
-  { key: 'blending', name: 'Blending', role: 'Granulation operator', produces: ['lubricated blend', 72], uses: ['granulation'],
-    steps: [{ block: 'lubricate', settings: () => ({ granuleWeight: { ref: 'granulation/yield/output' }, tolerance: '0.5' }) }, { block: 'blend-uniformity' }, yieldStep({ header: 'coreBatch' })] },
-];
-const wetCompression = (produces: string): StagePlan => ({ key: 'compression', name: 'Compression', role: 'Compression operator', rooms: ['Compression'], produces: [produces, 720], uses: ['blending'], steps: compression });
+/** Pack and label (TA-26): the packing room cleared, labels issued, samples, labels reconciled, leftovers destroyed, yield. */
+const packAndLabel = (before: string): StagePlan => ({
+  key: 'pack', name: 'Pack and label', role: 'Packing operator', rooms: ['Packing'],
+  steps: [{ block: 'pack-material-issue', key: 'labels', name: 'Issue the labels', settings: () => ({ unit: 'units' }) },
+    sample('qc-sample', 'QC sample'), sample('reserve-sample', 'Reserve sample'),
+    { block: 'printed-reconciliation', key: 'label-reconciliation', name: 'Reconcile the labels', settings: () => ({ unit: 'units', issued: { ref: 'pack/labels/issued' } }) },
+    { block: 'destruction' }, yieldStep({ ref: `${before}/yield/output` }, '99.0')],
+});
 
 const SKELETONS: { id: string; name: string; text: string; stages: StagePlan[] }[] = [
   {
-    id: 'wet-granulation-film-coated', name: 'Wet granulation, film-coated',
-    text: 'Binder solution, granulation and drying, lubrication, compression, coating suspension and film coating.',
-    stages: [...WET, wetCompression('core tablets'),
-      { key: 'suspension', name: 'Coating suspension', kind: 'preparation', role: 'Coating operator', produces: ['coating suspension', 24],
-        steps: [weighStep('weigh-coating'), { block: 'coating-suspension' }] },
-      { key: 'coating', name: 'Film coating', role: 'Coating operator', rooms: ['Coating'], produces: ['coated tablets', 2160], uses: ['compression', 'suspension'],
-        steps: [{ block: 'spray-coat', key: 'coat', settings: () => ({ coreWeight: { ref: 'compression/compress/meanWeight' }, base: 'start' }) },
-          { block: 'tablet-reconciliation', key: 'yield', settings: () => ({ theoretical: { ref: 'compression/yield/goodTablets' }, meanWeight: { ref: 'coating/coat/meanWeight' },
-            yieldLimit: { low: '97.0', high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } }) }] },
-    ],
-  },
-  {
-    id: 'wet-granulation-uncoated', name: 'Wet granulation, uncoated',
-    text: 'Binder solution, granulation and drying, lubrication, then compression.',
-    stages: [...WET, wetCompression('bulk tablets')],
-  },
-  {
-    id: 'direct-compression-uncoated', name: 'Direct compression, uncoated',
-    text: 'Sifting and blending of the dispensed materials, then compression.',
+    id: 'blending', name: 'Blending of released batches',
+    text: 'Weigh each released API lot, blend, sample, yield; then Pack and label. The retest date comes from the oldest lot (TA-25).',
     stages: [
-      { key: 'blending', name: 'Blending', role: 'Production operator', produces: ['blend', 72],
-        steps: [weighStep('weigh'), { block: 'sift' }, { block: 'dry-mix', key: 'blend' }, yieldStep({ header: 'coreBatch' })] },
-      { key: 'compression', name: 'Compression', role: 'Compression operator', rooms: ['Compression'], produces: ['bulk tablets', 720], uses: ['blending'], steps: compression },
+      { key: 'blending', name: 'Blending', role: 'Production operator', rooms: ['Blending'], produces: ['blended API', 720],
+        steps: [{ block: 'weigh', key: 'weigh-lots' }, { block: 'charge', key: 'charge-lots' }, { block: 'mix', key: 'blend' },
+          sample('blend-sample', 'Blend sample'), yieldStep({ header: 'batchSize' }, '98.0')] },
+      packAndLabel('blending'),
     ],
   },
 ];

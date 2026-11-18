@@ -16,19 +16,11 @@ export const lower = (label: string) => label.split(' ').map((w) => (/^.+[A-Z]/u
 /** "is" or "are" after a label: "the good tablets are", "the yield is". */
 const isAre = (label: string) => (/[^su]s$/.test(label.split(' ').at(-1) ?? '') ? 'are' : 'is');
 
-// Packing: the master's pack facts and the batch facts recorded at issue, in words.
-const FACTS: Record<string, string> = {
-  'pack.unitsPerPack': 'the tablets per pack', 'pack.packsPerCarton': 'the packs per carton', 'pack.shelfLifeMonths': 'the approved shelf life',
-  'pack.expiryRule': 'the expiry rule', 'pack.type': 'the pack type', 'pack.destination': 'the destination', 'pack.gtin': 'the pack GTIN', 'pack.mrp': 'the MRP of the master',
-  'batch.bulk': 'the bulk batch number', 'batch.mfgDate': 'the date of manufacture of the bulk', 'batch.tablets': 'the bulk tablets issued',
-  'batch.packs': 'the theoretical packs', 'batch.line': 'the packing line',
-};
 
 /** One input of a calculation as a part: "$gross" is a field, "$target" a setting, "$net" an earlier calculation. */
 function input(block: Block, x: unknown): Part {
   if (typeof x !== 'string' || !x.startsWith('$')) return written(block, x);
   const raw = x.slice(1).replace(/\?$/, '');
-  if (FACTS[raw]) return FACTS[raw];
   if (raw.startsWith('earlier.')) return `the ${lower(block.fields.find((f) => f.name === raw.slice(8))?.label ?? raw)} read in earlier rounds`;
   if (raw.startsWith('prev.')) return { prev: raw.slice(5) };
   if (block.settings.some((s) => s.name === raw)) return { setting: raw };
@@ -126,11 +118,10 @@ export function settingText(doc: MasterDoc, v: SettingValue | undefined): string
   if ('unit' in v) return limitText(v);
   if ('formula' in v) {
     const l = materialLines(doc).find((x) => x.key === v.formula);
-    // A packing material by its name and code, as in the master's packing materials.
-    if (l && 'perPack' in l) return `${l.name} (${l.code})`;
     return `the batch quantity of ${l?.name || v.formula}${v.adjusted ? ', adjusted for the lot' : ''}`;
   }
   if ('header' in v) return HEADER_LABEL[v.header].label;
+  if ('molar' in v) return 'the molar theoretical yield of this stage';
   const [sk, tk, name] = v.ref.split('/');
   const s = doc.stages.find((x) => x.key === sk);
   const t = s?.steps.find((x) => x.key === tk);

@@ -25,11 +25,11 @@ export async function masterVersion(q: Sql | Tx, id: number, lock = false): Prom
   return rows[0];
 }
 
-// PL-08: the product and every material must be active in master data now; their code and name are copied from it.
+// PL-08: the API and every material must be active in master data now; their code and name are copied from it. The
+// API is a material of master data (plan 3c.1), so MMS can stock its lots.
 async function withMasterData(master: Master, doc: MasterDoc): Promise<MasterDoc> {
-  const products = await master.products();
-  const product = usableItem(products, doc.header.productItemId, 'product');
   const materials = await master.materials();
+  const product = usableItem(materials, doc.header.productItemId, 'material');
   return {
     ...doc,
     header: { ...doc.header, productCode: product.code, productName: product.name },

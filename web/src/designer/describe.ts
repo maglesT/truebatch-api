@@ -4,6 +4,7 @@ import { findBlock } from '../../../shared/blocks/index.js';
 import { masterChecks } from '../../../shared/master/checks.js';
 import { materialLines, type FormulaLine, type MasterDoc, type Stage, type Step } from '../../../shared/master/schema.js';
 import { unitName } from '../../../shared/engine/stock.js';
+import { formulaText } from '../../../shared/engine/values.js';
 import { stepTitle } from '../../../shared/engine/batch.js';
 import { neededText } from '../../../shared/engine/training.js';
 import { grouped, placeLabel } from './model.js';
@@ -12,10 +13,8 @@ import { sentence, sentenceText, settingText, slotsOf } from './sentences.js';
 export interface Line { key: string; text: string }
 export interface Section { key: string; title: string; lines: Line[] }
 
-const PLACE: Record<FormulaLine['place'], string> = { intragranular: 'intragranular', extragranular: 'extragranular', binder: 'in the binder solution', coating: 'coating' };
-const ROLE: Record<FormulaLine['role'], string> = { api: 'API', excipient: 'excipient', solvent: 'solvent, removed in processing' };
 
-function adjustText(doc: MasterDoc, l: FormulaLine): string {
+function adjustText(l: FormulaLine): string {
   const a = l.adjust;
   if (!a) return '';
   const out: string[] = [];
@@ -23,7 +22,6 @@ function adjustText(doc: MasterDoc, l: FormulaLine): string {
   if (a.potency) out.push(`adjusted for the lot's assay on the ${a.potency.basis} basis${a.potency.standardIs ? `, the formula quantity being the ${a.potency.standardIs} weight` : ''}${a.potency.potencyAs ? `, potency stated as ${a.potency.potencyAs}` : ''}${a.potency.assayAbove100 === 'treat as 100' ? ', an assay above 100 % taken as 100 %' : ''}`);
   if (a.content) out.push(`adjusted for the ${a.content.contentSource === 'in-process result' ? 'in-process' : "lot's"} content, the formula quantity being of the ${a.content.formulaQuantityIs === 'dry' ? 'pure material' : 'material as supplied'}${a.content.nominalContent ? ` (nominal ${a.content.nominalContent} %)` : ''}${a.content.resultType ? `, the result being ${a.content.resultType === 'content' ? 'the content' : '% of theoretical'}` : ''}`);
   if (a.overage) out.push(`with ${a.overage.percent} % overage${a.overage.maxPercent ? ` (at most ${a.overage.maxPercent} %)` : ''}`);
-  if (a.compensates?.length) out.push(`reduced or increased to make up for the adjusted quantity of ${a.compensates.map((k) => doc.formula.find((x) => x.key === k)?.name ?? k).join(' and ')}`);
   return `; at dispensing ${out.join(', then ')}`;
 }
 
@@ -67,23 +65,21 @@ export function stepText(doc: MasterDoc, t: Step, j: number, units?: Units): str
     t.training ? neededText(t.training, t.checker) : '',
     t.critical ? 'Critical step.' : '', t.minMinutes ? `Takes at least ${t.minMinutes} minutes.` : '', flow,
     t.everyMinutesLater ? `After ${t.everyMinutesLater.afterMinutes} minutes, a round every ${t.everyMinutesLater.everyMinutes} minutes.` : '',
-    t.onlyIf ? `Done only when the ${t.onlyIf.header === 'batchSize' ? 'batch size' : 'core batch weight'} is ${t.onlyIf.limit.low ? `at least ${t.onlyIf.limit.low}` : ''}${t.onlyIf.limit.low && t.onlyIf.limit.high ? ' and ' : ''}${t.onlyIf.limit.high ? `at most ${t.onlyIf.limit.high}` : ''} ${t.onlyIf.limit.unit}; otherwise left out.` : '',
-    t.orderAfter ? `Order-critical: after step ${after < 0 ? '(no longer in this stage)' : `${after + 1}. ${stepTitle(doc, steps[after]!)}`}.` : '',
-    t.applyPerCharge ? `Apply ${t.applyPerCharge.liquid} of the liquid per ${t.applyPerCharge.charge} charged, then stop.` : ''].filter(Boolean).join(' ');
+    t.onlyIf ? `Done only when the batch size is ${t.onlyIf.limit.low ? `at least ${t.onlyIf.limit.low}` : ''}${t.onlyIf.limit.low && t.onlyIf.limit.high ? ' and ' : ''}${t.onlyIf.limit.high ? `at most ${t.onlyIf.limit.high}` : ''} ${t.onlyIf.limit.unit}; otherwise left out.` : '',
+    t.orderAfter ? `Order-critical: after step ${after < 0 ? '(no longer in this stage)' : `${after + 1}. ${stepTitle(doc, steps[after]!)}`}.` : ''].filter(Boolean).join(' ');
 }
 
 export function describeMaster(doc: MasterDoc, units?: Units): Section[] {
   const h = doc.header;
   const top: Section[] = [
     { key: 'header', title: 'Header', lines: [
-      { key: 'product', text: `Product ${h.productCode}, ${h.productName}.` },
-      { key: 'batch', text: `Batch size ${grouped(h.batchSize)} tablets.` },
-      { key: 'weights', text: `Theoretical core weight ${h.coreWeightMg} mg per tablet${h.coatedWeightMg ? `; coated weight ${h.coatedWeightMg} mg` : '; uncoated'}${h.dieAreaMm2 ? `; die bore area ${h.dieAreaMm2} mm²` : ''}.` },
+      { key: 'product', text: `API ${h.productCode}, ${h.productName}${h.mw ? `; molecular weight as isolated ${h.mw} g/mol` : ''}.` },
+      { key: 'batch', text: `Batch size ${h.batchSize} kg of API expected.` },
+      { key: 'retest', text: `Retest period ${h.retestMonths} months from the date of manufacture.` },
       ...(h.dispensingRooms?.length ? [{ key: 'dispensing', text: `Weighed in the dispensing rooms ${h.dispensingRooms.join(', ')}.` }] : []),
-      ...(h.otherStrengths ?? []).map((x, n) => ({ key: `strength:${n}`, text: `Also compressed from the same blend: ${x.name}, label claim ${x.labelClaim}, core weight ${x.coreWeightMg} mg.` })),
     ] },
     { key: 'formula', title: 'Formula', lines: doc.formula.map((l) => ({ key: l.key,
-      text: `${l.name} (${l.code}), ${ROLE[l.role]}, ${PLACE[l.place]}${l.place === 'coating' ? ` layer ${l.layer ?? 1}` : ''}: ${l.mgPerTablet} mg per tablet${l.labelClaim ? ` (label claim ${l.labelClaim})` : ''}${l.batchQuantity ? ` (batch quantity written as ${l.batchQuantity})` : ''}${adjustText(doc, l)}.` })) },
+      text: `${l.name} (${l.code}), ${l.role} in ${doc.stages.find((s) => s.key === l.stage)?.name ?? l.stage}: ${formulaText(l)}${l.mw ? `; MW ${l.mw} g/mol` : ''}${l.density ? `; density ${l.density} kg/L` : ''}${adjustText(l)}.` })) },
   ];
   return [
     ...top,

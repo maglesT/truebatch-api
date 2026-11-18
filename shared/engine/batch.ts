@@ -65,13 +65,11 @@ export function stepPlace(doc: MasterDoc, k: StepKey): string {
   return s && st ? `${s.name} › ${stepTitle(doc, st)}${s.kind === 'sub-batch' ? ` (sub-batch ${k.sub})` : ''}` : `step ${keyId(k)}`;
 }
 
-/** F4 by a rule of the master on a header value (e.g. the bag premix only for a batch of at most 50 kg); null when the step is in. */
+/** F4 by a rule of the master on a header value (the batch size); null when the step is in. */
 export function leftOutBy(doc: MasterDoc, st: Step): string | null {
   if (!st.onlyIf) return null;
-  const h = headerValue(doc, st.onlyIf.header);
-  const value = typeof h === 'string' ? h : h.ok ? { value: h.value, unit: h.unit } : undefined;
-  const r = value === undefined ? undefined : c1WithinLimits({ value, limit: st.onlyIf.limit });
-  return r?.ok && r.check?.pass ? null : `Left out by the master's rule: only when the ${st.onlyIf.header === 'batchSize' ? 'batch size' : 'core batch weight'} is ${r?.ok ? r.check?.shown ?? '' : 'within its limit'}`;
+  const r = c1WithinLimits({ value: headerValue(doc, st.onlyIf.header), limit: st.onlyIf.limit });
+  return r.ok && r.check?.pass ? null : `Left out by the master's rule: only when the batch size is ${r.ok ? r.check?.shown ?? '' : 'within its limit'}`;
 }
 export interface StageView { index: number; key: string; name: string; open: boolean; blocked?: string; closed: boolean }
 export interface Timer {

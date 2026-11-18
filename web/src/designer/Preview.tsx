@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { findBlock } from '../../../shared/blocks/index.js';
 import { evaluate } from '../../../shared/engine/index.js';
 import { masterSchema, type MasterDoc } from '../../../shared/master/schema.js';
-import { batchWeight, dispensing, type LotValues } from './example.js';
+import { dispensing, type LotValues } from './example.js';
 import { settingText } from './sentences.js';
 import { grouped, qtyText } from './model.js';
 import { Decimal } from './ui.js';
@@ -24,8 +24,6 @@ export function Preview({ doc: raw }: { doc: MasterDoc }) {
   const doc = parsed.data;
   const rows = dispensing(doc, lots);
   const adjusted = doc.formula.filter((l) => l.adjust && (l.adjust.potency || l.adjust.content));
-  const core = batchWeight(doc, doc.header.coreWeightMg);
-  const coated = batchWeight(doc, doc.header.coatedWeightMg);
   const yields = doc.stages.flatMap((s, si) => s.steps.flatMap((t, ti) => {
     if (findBlock(t.block)?.gmp !== 'yield') return [];
     const v = t.settings.theoretical;
@@ -50,14 +48,14 @@ export function Preview({ doc: raw }: { doc: MasterDoc }) {
         ) : <p className="muted">No material is adjusted for its lot: the dispensing quantities are the batch quantities.</p>}
       </div>
       <div className="card">
-        <h2>Dispensing quantities for {Number(doc.header.batchSize).toLocaleString('en-IN')} tablets</h2>
+        <h2>Dispensing quantities for {doc.header.batchSize} kg of API</h2>
         <div className="table-wrap">
           <table className="plain-table">
             <thead><tr><th>Material</th><th>Batch quantity</th><th>To dispense</th><th>Worked out</th></tr></thead>
             <tbody>
               {rows.map(({ line, standard, adjusted: a }) => (
                 <tr key={line.key} className={a && !a.ok ? 'bad-row' : ''}>
-                  <td><b>{line.code}</b><span className="cell-sub">{line.name}{line.adjust?.compensates?.length ? ' · compensating filler' : ''}</span></td>
+                  <td><b>{line.code}</b><span className="cell-sub">{line.name}</span></td>
                   <td className="num nowrap">{qtyText(standard)}</td>
                   <td className="num nowrap"><b>{qtyText(a ?? standard)}</b></td>
                   <td className="small">{a ? (a.ok ? a.shown : <span className="error">{a.message}</span>) : <span className="muted">not adjusted</span>}</td>
@@ -70,8 +68,7 @@ export function Preview({ doc: raw }: { doc: MasterDoc }) {
       <div className="card">
         <h2>Theoretical quantities and yields</h2>
         <dl className="details">
-          <dt>Core batch weight</dt><dd>{core?.ok ? grouped(core.shown) : '—'}</dd>
-          {coated && <><dt>Coated batch weight</dt><dd>{coated.ok ? grouped(coated.shown) : coated.message}</dd></>}
+          <dt>API expected per batch</dt><dd>{doc.header.batchSize} kg</dd>
           {yields.map((y, i) => <Fragment key={i}><dt>Yield of {y.stage}: theoretical</dt><dd className={y.ok ? '' : 'error'}>{y.text}</dd></Fragment>)}
         </dl>
       </div>

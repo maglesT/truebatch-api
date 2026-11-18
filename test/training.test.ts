@@ -34,12 +34,12 @@ beforeAll(async () => {
         ('asha', 'Asha', 'SOP-STR-004', 'Operating the stirrer', '2026-01-10', '2027-01-09', true),
         ('meera', 'Meera', 'SOP-STR-004', 'Operating the stirrer', '2026-02-01', '2027-01-31', true),
         ('ravi', 'Ravi', 'SOP-STR-004', 'Operating the stirrer', '2024-01-10', '2025-01-09', false),
-        ('ravi', 'Ravi', 'SOP-GRN-001', 'Granulation', '2026-01-10', '2027-01-09', true);`);
+        ('ravi', 'Ravi', 'SOP-GRN-001', 'Step 1: condensation', '2026-01-10', '2027-01-09', true);`);
     provider = connect(TEST_DATABASE_URL, { role: 'truebatch_api_app', link: true });
     return links({ recruitment: provider }, { recruitment: schema });
   });
   const item = (itemId: string, code: string, name: string) => ({ itemId, code, name, version: 1, active: true });
-  t.master.products_.push({ ...item('p', 'P', 'P'), strength: null, dosageForm: 'tablet' });
+  t.master.materials_.push({ ...item('p', 'P', 'P'), category: 'API', unit: 'kg' });
   t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' });
   const people = { author: ['truebatch_api.master.author'], issuer: ['truebatch_api.batch.issue'], asha: ['truebatch_api.batch.operate', 'truebatch_api.batch.check'],
     ravi: ['truebatch_api.batch.check'], kiran: ['truebatch_api.batch.check'], meera: ['truebatch_api.batch.check', 'truebatch_api.batch.operate'], qaperson: ['truebatch_api.qa.release'] } as const;
@@ -94,7 +94,7 @@ describe('the training a step needs, in the master', () => {
   });
 
   it('TA-23 the designer picks the skill from those Recruitment publishes (each once); none while the link is off or down', async () => {
-    expect((await as('author', 'GET', '/api/recruitment/skills')).json()).toEqual({ link: 'ok', skills: [{ code: 'SOP-GRN-001', title: 'Granulation' }, SKILL] });
+    expect((await as('author', 'GET', '/api/recruitment/skills')).json()).toEqual({ link: 'ok', skills: [{ code: 'SOP-GRN-001', title: 'Step 1: condensation' }, SKILL] });
     await cut();
     try {
       expect((await as('author', 'GET', '/api/recruitment/skills')).json()).toEqual({ link: 'down', skills: [] });

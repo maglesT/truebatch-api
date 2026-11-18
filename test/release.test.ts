@@ -138,10 +138,10 @@ describe('the review list for QA', () => {
     const never = [...round(1, false), ...round(2, false), ...round(3, false)];
     expect(review(d, never, [], at(1000)).outOfLimits.map((o) => o.step)).toEqual(['0.1.0.3']);
     expect(notYetText('2.150 % rounded to 1 decimal = 2.2 %; limit 2.5 to 3.5 %: OUT OF LIMITS (below the lower limit)')).toBe('2.150 % rounded to 1 decimal = 2.2 %; limit 2.5 to 3.5 %: not reached yet, the rounds go on');
-    expect(notYetText('Compression finished: no: FAIL')).toBe('Compression finished: no: not yet, the rounds go on');
+    expect(notYetText('Step 2: salt formation finished: no: FAIL')).toBe('Step 2: salt formation finished: no: not yet, the rounds go on');
     // A terminated batch: the rounds do not go on (owner, 16 Nov 2026).
     expect(notYetText('limit 2.5 to 3.5 %: OUT OF LIMITS (below the lower limit)', true)).toBe('limit 2.5 to 3.5 %: not reached (terminated)');
-    expect(notYetText('Compression finished: no: FAIL', true)).toBe('Compression finished: no: not reached (terminated)');
+    expect(notYetText('Step 2: salt formation finished: no: FAIL', true)).toBe('Step 2: salt formation finished: no: not reached (terminated)');
   });
 
   it('TA-14 a terminated batch: only the last round left unfinished reads "not reached (terminated)"; an earlier round followed by another went on (owner, 16 Nov 2026)', () => {
