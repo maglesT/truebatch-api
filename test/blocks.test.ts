@@ -109,6 +109,8 @@ describe('the engine runs the new blocks like any other', () => {
     expect(openSteps(doc, r1, at(10_000)).steps.find((x) => x.id === '0.1.0.1')!.results.net).toMatchObject({ ok: true, value: '25' });
     expect(state(doc, r1, '0.1.0.2')).toBe('open');
     const r2 = walk(doc, r1, '0.1.0.2', drum('27.05', 'yes'));
+    // The running total over the drums: 25.00 + 24.95 kg.
+    expect(openSteps(doc, r2, at(10_000)).steps.find((x) => x.id === '0.1.0.2')!.results.totalNet).toMatchObject({ ok: true, value: '49.95', unit: 'kg' });
     expect(state(doc, r2, '0.1.0.3')).toBe('absent');
     expect(state(doc, r2, '0.1.1.1')).toBe('open');
   });

@@ -1,7 +1,7 @@
 import type { Block } from './format.js';
 
 // Isolation (plan 3b): centrifuge or filter in loads, one round per load until the last: the slurry charged, the
-// wash (its quantity against the master's, C1, from the wash solvent's formula line), the wet cake (gross − tare, T1),
+// wash (its quantity against the master's, C1, from the wash solvent's formula line), the wet cake (gross − tare, T1) and the total of the loads so far (T2),
 // the filter cloth checked (C4) and where the mother liquor goes (to solvent recovery: TA-24). A filtration that
 // keeps the filtrate (catalyst or carbon removed) has other fields: its own block (owner, 18 Nov 2026).
 export const isolate: Block = {
@@ -28,6 +28,7 @@ export const isolate: Block = {
     { name: 'clothCheck', label: 'Filter cloth checked', template: 'C4', args: { question: 'Filter cloth intact', answers: ['$clothChecked'], expected: ['yes'] } },
     { name: 'washCheck', label: 'Wash quantity against the master', template: 'C1', args: { value: '$wash', around: { centre: '$washTarget', name: 'wash per load', plusMinusPercent: '$tolerance' } } },
     { name: 'wetCake', label: 'Wet cake', template: 'T1', args: { a: '$gross', b: '$tare' } },
+    { name: 'totalWetCake', label: 'Total wet cake', template: 'T2', args: { values: ['$prev.totalWetCake?', '$wetCake'], unit: 'kg' } },
     { name: 'lastLoadCheck', label: 'Last load', template: 'C4', args: { question: 'Last load', answers: ['$lastLoad'], expected: ['yes'] } },
   ],
 };
