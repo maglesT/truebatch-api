@@ -3,7 +3,7 @@ import type { Block } from './format.js';
 // Packing, TB-P4: issue of one packing material of the master to the batch: a released lot of that material (MMS, or
 // the lot label with a second person), the quantity issued and its label. Always checked by a second person.
 export const packMaterialIssue: Block = {
-  id: 'pack-material-issue', version: 1, name: 'Issue a packing material', gmp: 'weighing', checker: true, packing: true, title: 'Issue {material}',
+  id: 'pack-material-issue', version: 1, name: 'Issue a packing material', gmp: 'weighing', checker: true, title: 'Issue {material}',
   instruction: 'Issue the packing material shown from a released lot. Count or weigh the quantity issued.',
   fields: [
     { name: 'lot', label: 'Lot', kind: 'lot' },

@@ -135,8 +135,8 @@ export function stateLabel(state: State, terminated: unknown): [string, string] 
   const t = terminated ? TERMINATED_STATE[state] : undefined;
   return t ? [t[0]!.toUpperCase() + t.slice(1), ''] : STATE_LABEL[state];
 }
-/** A batch status in words (a packing batch is "packing complete"); `capital` for a chip. */
-export const statusText = (status: string, capital = false) => statusWords(status, product.packing, capital);
+/** A batch status in words; `capital` for a chip. */
+export const statusText = (status: string, capital = false) => statusWords(status, capital);
 export const STATUS_CHIP: Record<string, string> = {
   'in production': 'chip-info', 'manufacturing complete': 'chip-warn', 'production approved': 'chip-ok', 'QC approved': 'chip-ok', released: 'chip-ok', rejected: 'chip-bad',
 };

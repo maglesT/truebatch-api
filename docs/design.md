@@ -1,12 +1,18 @@
-# TrueBatch Tablets: design decisions
+# TrueBatch API: design decisions
 
-Owner decisions of 15 November 2026. Built the Logbook way (the platform Logbook is the model for structure, patterns
+Owner decisions of 15 November 2026 (TrueBatch Tablets, whose engine this is a copy of) and 18 November 2026
+(TrueBatch API: the plan `api-plan.md` and the minimum register). Built the Logbook way (the platform Logbook is the model for structure, patterns
 and size), not the Batchwright way.
 
 ## Product
-- **One product per dosage form.** TrueBatch Tablets covers manufacturing, from dispensing to QA release of bulk
-  tablets. Packing is a separate product, "TrueBatch Tablets Packing", in this repository on the same engine
-  (`docs/packing-design.md`).
+- **TrueBatch API** is the batch record for making an API by chemical synthesis: one stage per synthesis step (each
+  makes an intermediate with its own yield and hold time, used by the next stage), then crystallisation, isolation,
+  drying and milling, and **Pack and label** as the last stage of the same record (owner, 18 Nov 2026: no separate
+  packing product). Out of scope: fermentation and cell culture, extraction from natural sources,
+  radiopharmaceuticals, sterile APIs after the sterilisation point, clinical-trial APIs, continuous flow.
+- **A copy of the TrueBatch Tablets engine, no new mechanism.** The API's differences are data: new blocks (data
+  files), one new template (T28 molar quantity), the batch header in kg, the formula per stage and one more published
+  view (`output_lot_v1`). The sections below are those of TrueBatch Tablets until phase C replaces the tablet parts.
 
 ## Platform
 - Runs on the Medhanta platform. Core provides people, sign-in, permissions, e-signature re-authentication and master
@@ -17,7 +23,8 @@ and size), not the Batchwright way.
   use (at most one renewal a minute); the session ends with core's sign-on (8 hours).
 
 ## Links
-Owner decisions of 15 November 2026. Built as the Logbook's link clients: one client (`server/links.ts`) reads each
+Owner decisions of 15 November 2026 (TrueBatch Tablets, whose engine this is a copy of) and 18 November 2026
+(TrueBatch API: the plan `api-plan.md` and the minimum register). Built as the Logbook's link clients: one client (`server/links.ts`) reads each
 provider's report views live through `<PROVIDER>_DATABASE_URL`, which the platform writes only while the link is on;
 nothing is copied or cached. A read is **absent** (no URL: not licensed or switched off), **down** (refused or not
 answering) or **ok**.
@@ -66,7 +73,7 @@ answering) or **ok**.
   qualified, expired or missing, the signature is refused in plain words ("<name> has no valid training in <skill>
   (Recruitment): ask QA, or another trained person signs."). Link off or down: the sign dialog asks the signer to
   tick "I am trained in <skill>", and the signature records `training` from `hand` ("training typed by hand
-  (Recruitment not reachable)"), shown on the step, listed in QA's release review and in the PDF (TB-23). A step
+  (Recruitment not reachable)"), shown on the step, listed in QA's release review and in the PDF (TA-23). A step
   marked not applicable, a QA hold release and the batch-level signatures do not read training.
 - **Published** (`db/migrations/0006_report_views.sql`): `batch_fact_v1` and `equipment_use_v1` with Batchwright's
   names and columns, so the Logbook and Deviations read TrueBatch as they read Batchwright, and `deviation_note_v1`
@@ -114,7 +121,7 @@ answering) or **ok**.
   available again with no change there. The app counts the same when it compares a lot with MMS's stock
   (`shared/engine/stock.ts`: materialUses, issuedLots, returnProblems). A batch that used no material is asked nothing.
 - **Where machines are**: a stage that works machines or names a room chooses the rooms it may run in (master check,
-  TB-11); the floor is offered the machines of the field's type standing in those rooms. A balance is offered where
+  TA-11); the floor is offered the machines of the field's type standing in those rooms. A balance is offered where
   the weighing is done: in one of the master's **dispensing rooms** (header, picked from master data's rooms; a new
   tablet master starts with none, as a segregated block's booth may also be in a "Dispensing" area (17 Nov 2026 run);
   the rooms where a weighing balance stands are listed first; a master that weighs and names none is ⛔),
@@ -122,7 +129,7 @@ answering) or **ok**.
   server and the screen). Not every area called dispensing: a liquids block's "Liquid dispensing" balance is not
   offered to a tablet weighing. A version approved before the setting reads the rooms of the Dispensing area.
   The designer lists first the areas and rooms where the stage's machines stand (by type, from master data), and the
-  master check warns (⚠️, TB-11) when no machine of a step's type stands in the rooms its stage allows, naming where
+  master check warns (⚠️, TA-11) when no machine of a step's type stands in the rooms its stage allows, naming where
   the machines of that type stand: the floor's picker would be empty (17 Nov 2026 run: the disintegration tester in
   the QC lab). A warning, not ⛔: master data changes without a new master version, and the floor checks it again.
 - **Pick lists from master data** (17 Nov 2026 run): the product pick lists offer the products whose dosage form

@@ -40,14 +40,11 @@ export function stepTitle(doc: MasterDoc, st: Step): string {
   const m = line && materialLines(doc).find((l) => l.key === line.formula);
   if (m && block?.title) return block.title.replace('{material}', `${m.name} (${m.code})`);
   const what = line ? m?.name : typeof st.settings.what === 'string' ? st.settings.what : undefined;
-  // A pack without a leaflet has its cartons checked, not a leaflet (owner, 17 Nov 2026).
-  if (block?.id === 'carton-check' && doc.pack && !doc.pack.materials.some((x) => x.kind === 'leaflet')) return 'Carton check';
   return [block?.name ?? st.key, what].filter(Boolean).join(': ');
 }
 /** The fields a step asks for: a pack without a leaflet is not asked about a leaflet. */
 export function askedFields(doc: MasterDoc, block: Block): Block['fields'] {
-  const noLeaflet = block.id === 'carton-check' && doc.pack && !doc.pack.materials.some((x) => x.kind === 'leaflet');
-  return noLeaflet ? block.fields.filter((f) => f.name !== 'leaflet') : block.fields;
+  return block.fields;
 }
 /** Where a step instance is, in words: "Granulation › Dry to an LOD limit (round 2)". */
 export function stepLabel(doc: MasterDoc, k: StepKey): string {
@@ -114,7 +111,7 @@ const notYetOf = (st: Step, round: number, results: Current['results']) => {
   const stop = stopName(st);
   return stop && round < maxRounds(st) && failed(results[stop]) ? stop : undefined;
 };
-/** The results out of limits: a real limit failure, never a round that is "not yet" (TB-14). */
+/** The results out of limits: a real limit failure, never a round that is "not yet" (TA-14). */
 export const outOfLimits = (v: StepView) => Object.entries(v.results).filter(([n, r]) => n !== v.notYet && failed(r));
 /** A "not yet" worked line in plain words: the stop check is not reached yet and the rounds go on (a terminated batch: they do not). */
 export const notYetText = (shown: string, terminated = false) => shown.replace(/:\s*OUT OF LIMITS(?: \([^)]*\))?/g, terminated ? ': not reached (terminated)' : ': not reached yet, the rounds go on')

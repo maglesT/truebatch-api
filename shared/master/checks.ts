@@ -8,7 +8,6 @@ import { Dec, c1WithinLimits, findUnit, t10Compensating, t11SaltFactor, t2Total,
 import { decimalsOf } from '../templates/core.js';
 import { evaluate, lineQuantity } from '../engine/values.js';
 import { materialLines, type Answer, type FormulaLine, type Limit, type MasterDoc, type SettingValue } from './schema.js';
-import { packingChecks } from './packing.js';
 import { unitKindProblem } from './kinds.js';
 import { isBalance } from '../engine/picks.js';
 
@@ -17,7 +16,7 @@ export interface Question { key: string; options: string[]; needsReason: boolean
 export interface Problem { level: 'error' | 'warning'; path: string; message: string; rule?: string; question?: Question }
 
 /**
- * A message in plain words for the people who read it: without the internal codes of the rules (TB-11), templates
+ * A message in plain words for the people who read it: without the internal codes of the rules (TA-11), templates
  * (T9) and failure cases (F0204) the code comments use. The rule stays in `rule` for the tests.
  */
 export const plainWords = (m: string) => m
@@ -40,31 +39,29 @@ export function masterChecks(doc: MasterDoc): Problem[] {
   const warn = (path: string, message: string) => out.push({ level: 'warning', path, message });
   const twice = (keys: string[], path: string) => keys.forEach((k, i) => keys.indexOf(k) !== i && error(`${path}[${i}]`, `The key ${k} is used twice`));
 
-  // A packing master (it has a pack) has its own checks instead of the formula and calculation checks.
-  if (doc.pack) out.push(...packingChecks(doc));
-  else formulaChecks(doc, out, error);
+  formulaChecks(doc, out, error);
 
   twice(doc.stages.map((s) => s.key), 'stages');
-  // TB-11: a master that weighs names the rooms its materials are weighed in (its balances are offered there).
+  // TA-11: a master that weighs names the rooms its materials are weighed in (its balances are offered there).
   const weighs = doc.stages.some((s) => s.steps.some((t) => findBlock(t.block)?.fields.some((f) => f.kind === 'machine' && isBalance(f))));
-  if (weighs && !doc.header.dispensingRooms?.length) error('header.dispensingRooms', 'The master weighs but names no dispensing rooms: choose them in the header (rooms of master data)', 'TB-11');
+  if (weighs && !doc.header.dispensingRooms?.length) error('header.dispensingRooms', 'The master weighs but names no dispensing rooms: choose them in the header (rooms of master data)', 'TA-11');
   doc.stages.forEach((s, si) => {
     const path = `stages[${si}]`;
     twice(s.steps.map((t) => t.key), `${path}.steps`);
     if (s.kind === 'sub-batch' && !s.count) error(path, 'A sub-batch stage needs the number of sub-batches');
-    if (s.produces && !s.produces.holdHours) error(`${path}.produces`, `The intermediate ${s.produces.name} has no hold time`, 'TB-01');
+    if (s.produces && !s.produces.holdHours) error(`${path}.produces`, `The intermediate ${s.produces.name} has no hold time`, 'TA-01');
     // Everything the plain view would show as "(not set)" is reported here (the plain view's sentences, describe.ts).
     if (!s.role.trim()) warn(path, `Stage ${s.name} names no responsible role`);
-    if (!doc.pack && s.kind !== 'preparation' && !s.steps.some((t) => findBlock(t.block)?.gmp === 'yield')) error(path, `Stage ${s.name} has no yield step`);
+    if (s.kind !== 'preparation' && !s.steps.some((t) => findBlock(t.block)?.gmp === 'yield')) error(path, `Stage ${s.name} has no yield step`);
     if (s.kind === 'preparation' && !doc.stages.some((x) => x.uses.includes(s.key))) warn(path, `No stage uses the preparation ${s.name}`);
-    // TB-10: a stage worked in a room starts with line clearance.
+    // TA-10: a stage worked in a room starts with line clearance.
     const clearance = s.steps.findIndex((t) => findBlock(t.block)?.gmp === 'line-clearance');
-    if (s.roomTypes.length && clearance < 0) error(path, `Stage ${s.name} is worked in a room but has no line clearance step`, 'TB-10');
-    if (clearance > 0 && !doc.pack) warn(`${path}.steps[${clearance}]`, `Line clearance is not the first step of ${s.name}`);
-    // TB-11: a stage that works machines (not balances, nor the line a packing batch is issued to) or names a room
+    if (s.roomTypes.length && clearance < 0) error(path, `Stage ${s.name} is worked in a room but has no line clearance step`, 'TA-10');
+    if (clearance > 0) warn(`${path}.steps[${clearance}]`, `Line clearance is not the first step of ${s.name}`);
+    // TA-11: a stage that works machines (not balances) or names a room
     // runs only in the rooms it allows (shared/engine/picks.ts).
-    const placed = s.steps.some((t) => { const b = findBlock(t.block); return !b?.atIssue && b?.fields.some((f) => f.kind === 'room' || (f.kind === 'machine' && !isBalance(f))); });
-    if (placed && !s.roomTypes.length) error(`${path}.roomTypes`, `Stage ${s.name}: choose the rooms this stage may run in (an area or a room of master data, in the stage settings)`, 'TB-11');
+    const placed = s.steps.some((t) => { const b = findBlock(t.block); return b?.fields.some((f) => f.kind === 'room' || (f.kind === 'machine' && !isBalance(f))); });
+    if (placed && !s.roomTypes.length) error(`${path}.roomTypes`, `Stage ${s.name}: choose the rooms this stage may run in (an area or a room of master data, in the stage settings)`, 'TA-11');
     for (const u of s.uses) {
       const pi = doc.stages.findIndex((x) => x.key === u);
       if (pi < 0 || pi >= si) error(`${path}.uses`, `${u} is not an earlier stage`);
@@ -74,8 +71,7 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       const p = `${path}.steps[${ti}]`;
       const block = findBlock(st.block);
       if (!block) return void error(`${p}.block`, `No block ${st.block.id} version ${st.block.version}`);
-      if (block.packing && !doc.pack) error(p, `${block.name} is a packing step: a tablet master cannot use it`);
-      if (!st.checker && (block.gmp || st.critical)) error(p, `${block.gmp ? `A ${block.gmp.replace('line-clearance', 'line clearance')} step` : 'A critical step'} needs a second-person check`, 'TB-08');
+      if (!st.checker && (block.gmp || st.critical)) error(p, `${block.gmp ? `A ${block.gmp.replace('line-clearance', 'line clearance')} step` : 'A critical step'} needs a second-person check`, 'TA-08');
       if (st.critical && st.flow.kind === 'optional-with-reason') error(`${p}.flow`, 'A critical step cannot be optional');
       if (st.waitForCheck && !st.checker) warn(p, 'The next step waits for a check this step does not have');
       for (const bs of block.settings) if (!bs.optional && st.settings[bs.name] === undefined) error(`${p}.settings.${bs.name}`, `${bs.label} is not set`);
@@ -84,10 +80,10 @@ export function masterChecks(doc: MasterDoc): Problem[] {
         const listed = !bs?.options || (typeof v === 'string' && bs.options.includes(v));
         const why = !bs ? `The block ${block.name} has no setting ${name}` : listed ? settingProblem(doc, si, ti, bs.kind, v) : `${bs.label}: choose one of ${bs.options!.join(', ')}`;
         if (why) error(`${p}.settings.${name}`, why);
-        // TB-01: a limit (or a typed target) in a unit of another kind than the value it checks.
+        // TA-01: a limit (or a typed target) in a unit of another kind than the value it checks.
         const unit = typeof v === 'object' && 'unit' in v ? v.unit : typeof v === 'string' && bs?.kind === 'quantity' ? QUANTITY.exec(v)?.[3] : undefined;
         const wrong = !why && unit !== undefined ? unitKindProblem(block, name, st.settings, unit) : null;
-        if (wrong) error(`${p}.settings.${name}`, wrong, 'TB-01');
+        if (wrong) error(`${p}.settings.${name}`, wrong, 'TA-01');
       }
       // A temperature recorded with optional limits left empty is recorded without a check (the disintegration
       // medium at 37 ± 2 °C, an inlet or forming temperature): a warning, so the author sets them or leaves them knowingly.
@@ -101,7 +97,7 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       // the lubricant): the base leaves out what the stage adds, so the yield reads above 100 %.
       const base = block.id === 'stage-yield' ? st.settings.theoretical : undefined;
       const from = base && typeof base === 'object' && 'ref' in base ? doc.stages.find((x) => x.key === base.ref.split('/')[0]) : undefined;
-      if (from && from !== s && !doc.pack) {
+      if (from && from !== s) {
         const added = [...new Set(s.steps.flatMap((x) => Object.values(x.settings)).flatMap((v) => (typeof v === 'object' && 'formula' in v ? [v.formula] : [])))]
           .map((k) => doc.formula.find((l) => l.key === k)?.name).filter((n): n is string => !!n);
         if (added.length) error(`${p}.settings.theoretical`, `The yield of ${s.name} is worked out on the output of ${from.name} only, but ${s.name} adds ${added.join(' and ')}: the yield would read above 100 %. Take the theoretical core batch weight (or a quantity that includes what this stage adds) as the theoretical quantity`);
@@ -117,7 +113,7 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       if (st.everyMinutes && st.flow.kind !== 'repeat-until') error(`${p}.everyMinutes`, 'Checks every N minutes need a repeat-until step');
       const later = st.everyMinutesLater;
       if (later && !st.everyMinutes) error(`${p}.everyMinutesLater`, 'A later interval needs the interval of the first checks');
-      if (later && block.periodic && later.everyMinutes > block.periodic.maxMinutes) error(`${p}.everyMinutesLater`, `Periodic checks every ${later.everyMinutes} min: they must be at least every ${block.periodic.maxMinutes} min`, 'TB-15');
+      if (later && block.periodic && later.everyMinutes > block.periodic.maxMinutes) error(`${p}.everyMinutesLater`, `Periodic checks every ${later.everyMinutes} min: they must be at least every ${block.periodic.maxMinutes} min`, 'TA-15');
       if (st.onlyIf) {
         const r = c1WithinLimits({ value: { value: '0', unit: st.onlyIf.header === 'batchSize' ? 'tablets' : 'kg' }, limit: st.onlyIf.limit });
         if (!r.ok) error(`${p}.onlyIf`, `The rule for leaving the step out: ${r.message}`);
@@ -127,9 +123,9 @@ export function masterChecks(doc: MasterDoc): Problem[] {
         .some((t) => Object.values(t.settings).some((v) => typeof v === 'object' && 'formula' in v && v.adjusted && doc.formula.find((f) => f.key === v.formula)?.adjust?.overage)));
       if (excess && !st.applyPerCharge) error(p, 'The liquid is made with an overage: state the amount to apply per charge, and stop at that net weight (F0339: spraying all of it gives about 4.5 % more drug); the rest goes to the reconciliation');
       if (st.applyPerCharge) for (const [k, v] of Object.entries(st.applyPerCharge)) if (!isMass(v)) error(`${p}.applyPerCharge.${k}`, `"${v}" is not a mass with a unit, e.g. "971 g"`);
-      if (block.periodic && !st.everyMinutes) error(`${p}.everyMinutes`, `${block.name} needs the interval of its periodic checks`, 'TB-15');
+      if (block.periodic && !st.everyMinutes) error(`${p}.everyMinutes`, `${block.name} needs the interval of its periodic checks`, 'TA-15');
       if (block.periodic && st.everyMinutes && st.everyMinutes > block.periodic.maxMinutes) {
-        error(`${p}.everyMinutes`, `Periodic checks every ${st.everyMinutes} min: they must be at least every ${block.periodic.maxMinutes} min`, 'TB-15');
+        error(`${p}.everyMinutes`, `Periodic checks every ${st.everyMinutes} min: they must be at least every ${block.periodic.maxMinutes} min`, 'TA-15');
       }
     });
   });
@@ -158,7 +154,7 @@ function formulaChecks(doc: MasterDoc, out: Problem[], error: (path: string, mes
       error(`formula[${i}].adjust`, `State what the in-process result for ${l.name} is: the content (% w/w) or a relative assay in % of theoretical (F0205: a % of theoretical read as the content gives about a third of the dose)`);
     }
     const r = lineQuantity(doc, [], HERE, { ...l, adjust: { ...a, compensates: undefined } }, true, values);
-    if (!r.ok) error(`formula[${i}].adjust`, r.message, a.potency ? 'TB-13' : undefined);
+    if (!r.ok) error(`formula[${i}].adjust`, r.message, a.potency ? 'TA-13' : undefined);
     // A compensating filler that would go below zero even at the nominal certificate values (salt factor, overage).
     const others = (a.compensates ?? []).map((k) => doc.formula.find((x) => x.key === k)).filter((x): x is FormulaLine => !!x && x.key !== l.key);
     const quantity = (x: FormulaLine, adjusted: boolean) => {
@@ -169,7 +165,7 @@ function formulaChecks(doc: MasterDoc, out: Problem[], error: (path: string, mes
     const adj = others.map((x) => ({ name: x.name, standard: quantity(x, false), adjusted: quantity(x, true) }));
     if (std && adj.length && adj.every((x) => x.standard && x.adjusted)) {
       const t10 = t10Compensating({ fillers: [{ name: l.name, standard: std }], adjusted: adj as { name: string; standard: Q; adjusted: Q }[] });
-      if (!t10.ok) error(`formula[${i}].adjust.compensates`, `At the nominal certificate values: ${t10.message.replace(/; raise a deviation$/, '')}`, 'TB-13');
+      if (!t10.ok) error(`formula[${i}].adjust.compensates`, `At the nominal certificate values: ${t10.message.replace(/; raise a deviation$/, '')}`, 'TA-13');
     }
   });
   formulaSums(doc, error);

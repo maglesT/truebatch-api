@@ -1,4 +1,4 @@
-// The sweep: every block of the library (tablets and packing) in a small master with all its settings set, and the
+// The sweep: every block of the library (API) in a small master with all its settings set, and the
 // test masters, worked out with every field filled ("1" for a number, yes, the first option), once with the required
 // fields only and once with all, in a first and a second round. A template may refuse what it is given; it must never
 // crash on it (a crash is "could not use these inputs": the step could not be signed).
@@ -8,7 +8,6 @@ import { evaluate, type StepEvent, type Value } from '../shared/engine/index.js'
 import { masterChecks } from '../shared/master/checks.js';
 import { masterSchema, type MasterDoc, type Step } from '../shared/master/schema.js';
 import { at, ev, tablet } from './engine-fixture.js';
-import { GTIN, pack, packing } from './packing-fixture.js';
 
 const pct = (low: string, high: string) => ({ low, high, unit: '%' });
 const minutes = { low: '10', high: '12', unit: 'min' };
@@ -47,12 +46,8 @@ const SETTINGS: Record<string, Step['settings']> = {
   'qa-sample': { sampleLimit: { low: '50', high: '60', unit: 'tablets' } },
   'stage-yield': { theoretical: { header: 'coreBatch' }, yieldLimit: pct('97.0', '100.5'), accountabilityLimit: pct('99.0', '100.5') },
   'tablet-reconciliation': { theoretical: { header: 'batchSize' }, meanWeight: '100.0 mg', yieldLimit: pct('97.0', '100.5'), accountabilityLimit: pct('99.0', '100.5') },
-  'pack-material-issue': { material: { formula: 'foil' }, unit: 'm' },
-  'forming-check': { sealLimit: { low: '160', high: '190', unit: '°C' }, formLimit: { low: '110', high: '140', unit: '°C' } },
-  'leak-test': { vacuumUnit: 'mbar', vacuumLimit: { low: '400', high: '600', unit: 'mbar' }, level: 'S-1', aql: '0' },
-  'finished-goods': { meanWeight: { header: 'coreWeight' }, yieldLimit: pct('98.0', '100.5'), accountabilityLimit: pct('99.5', '100.5') },
-  'printed-reconciliation': { material: { formula: 'foil' }, unit: 'm', issued: '100 m' },
-  'serial-reconciliation': { received: '1000 nos' },
+  'pack-material-issue': { material: { formula: 'x' }, unit: 'units' },
+  'printed-reconciliation': { material: { formula: 'x' }, unit: 'units', issued: '100 units' },
 };
 
 const item = { itemId: 'eq-1', code: 'EQ-01', name: 'Equipment', version: 1, type: 'balance', room: 'RM-1', area: 'Area' };
@@ -69,7 +64,6 @@ function filled(b: Block, settings: Step['settings'], all: boolean): Record<stri
     if (f.kind === 'choice') return f.options![0]!;
     if (f.kind === 'timer') return `${at(minute += 11).toISOString().slice(0, 19)}Z`;
     if (f.kind === 'machine' || f.kind === 'room') return item;
-    if (f.kind === 'bulk') return 'TB260001';
     if (f.kind === 'lot') return 'L-1';
     return f.date ? '2026-11-03' : '1';
   };
@@ -96,24 +90,21 @@ function crashes(doc: MasterDoc, all: boolean): string[] {
 const header = { productItemId: 'p', productCode: 'P', productName: 'P', batchSize: '1000', coreWeightMg: '100.0', coatedWeightMg: '103.0', dispensingRooms: ['DSP-01'] };
 const formula = [{ key: 'x', materialItemId: 'm', code: 'M', name: 'M', mgPerTablet: '100.0', role: 'api', place: 'intragranular',
   adjust: { potency: { basis: 'as is', standardIs: 'anhydrous' }, overage: { percent: '2' } } }];
-/** A small master of one block with all its settings set; a packing block after the bulk issue (its batch facts). */
+/** A small master of one block with all its settings set. */
 function using(b: Block): MasterDoc {
   const step = (x: Block) => ({ key: x.id, block: { id: x.id, version: x.version }, checker: x.checker, settings: SETTINGS[x.id] ?? {} });
-  const bulk = findBlock({ id: 'bulk-issue', version: 1 })!;
-  const steps = b.packing && b.id !== bulk.id ? [step(bulk), step(b)] : [step(b)];
-  return masterSchema.parse({ header, formula, stages: [{ key: 's', name: 'Stage', kind: 'normal', steps }], ...(b.packing ? { pack: pack({ gtin: GTIN, serialisation: true }) } : {}) });
+  return masterSchema.parse({ header, formula, stages: [{ key: 's', name: 'Stage', kind: 'normal', steps: [step(b)] }] });
 }
 
 describe('the sweep: no template crashes on any block or test master', () => {
   it.each(BLOCKS.map((b) => [b.id, b] as const))('%s: all its settings set, its fields filled, required only or all, in two rounds', (id, b) => {
     expect(Object.keys(SETTINGS[id] ?? {}).sort()).toEqual(b.settings.map((s) => s.name).sort());
     for (const all of [false, true]) expect(crashes(using(b), all)).toEqual([]);
-    // Its limits and targets are of the kinds of the values they check (TB-01).
+    // Its limits and targets are of the kinds of the values they check (TA-01).
     expect(masterChecks(using(b)).filter((p) => /every reading would be refused/.test(p.message))).toEqual([]);
   });
 
-  it.each([['tablet', tablet()], ['packing', packing()], ['packing, serialised', packing({ gtin: GTIN, serialisation: true })],
-    ['packing, bottles', packing({ type: 'bottle' })]] as const)('the %s test master', (_name, doc) => {
+  it.each([['tablet', tablet()]] as const)('the %s test master', (_name, doc) => {
     for (const all of [false, true]) expect(crashes(doc, all)).toEqual([]);
     expect(masterChecks(doc).filter((p) => /every reading would be refused/.test(p.message))).toEqual([]);
   });
