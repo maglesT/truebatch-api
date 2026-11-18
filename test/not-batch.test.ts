@@ -107,3 +107,14 @@ describe('a repeat-until step whose stop check can never pass (Phase E screen ru
     }
   });
 });
+
+describe('Tablets round 39: an optional time limit ("$timeLimit?") of a T13 duration', () => {
+  it('becomes a wait when the master sets it, and none when it does not', async () => {
+    const { durations } = await import('../shared/engine/values.js');
+    const b = { ...findBlock({ id: 'charge-liquid', version: 1 })! };
+    b.calcs = b.calcs.map((c) => (c.template === 'T13' ? { ...c, args: { ...(c.args as object), limit: '$additionTimeLimit?' } } : c));
+    const step = (settings: Step['settings']) => ({ key: 'x', block: { id: 'charge-liquid', version: 1 }, checker: false, waitForCheck: false, critical: false, flow: { kind: 'none' }, settings }) as Step;
+    expect(durations(b, step({ additionTimeLimit: { low: '30', unit: 'min' } })).map((d) => d.limit.low)).toEqual(['30']);
+    expect(durations(b, step({}))).toEqual([]);
+  });
+});
