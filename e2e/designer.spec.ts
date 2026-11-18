@@ -72,6 +72,13 @@ test('TA-02 build a master from a skeleton, fix a master-check problem, then che
   await author.getByText('More options').click();
   await author.locator('.steps-col').getByRole('button', { name: /4\. Mix/ }).click();
   await expect(author.locator('.settings-col details.more')).not.toHaveAttribute('open');
+  // The stage's intermediate: its molecular weight and expected kg, for the molar yield and the stages that use it (T28).
+  await author.locator('.stages-col').getByRole('button', { name: /1\. Blending/ }).click();
+  await author.getByLabel('Intermediate molecular weight').fill('315.8');
+  await author.getByLabel('Intermediate expected kg').fill('100.0');
+  await expect(author.getByLabel('Intermediate molecular weight')).toHaveValue('315.8');
+  await author.getByLabel('Intermediate molecular weight').fill('');
+  await author.getByLabel('Intermediate expected kg').fill('');
 
   // The master check shows what is missing; its link selects the step, and the template sentence takes the input.
   const check = author.getByRole('complementary', { name: 'Master check' });
