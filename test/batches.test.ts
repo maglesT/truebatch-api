@@ -125,6 +125,13 @@ describe('issuing a batch', () => {
     expect(await t.owner`select 1 from signatures where object_type = 'batch' and object_id = ${a.id} and meaning = 'issued'`).toHaveLength(1);
   });
 
+  it('TA-06 a batch row is insert-only: neither the app role nor the owner can change, delete or truncate it (Tablets round 34)', async () => {
+    const { id } = await issue(await effectiveMaster());
+    expect(await code(t.owner`update batches set batch_no = batch_no`)).toBe('42501');
+    expect(await code(t.owner`delete from batches where id = ${id}`)).toBe('42501');
+    expect(await code(t.owner`truncate batches cascade`)).toBe('42501');
+  });
+
   it('only an effective master version is issued, and only with the issue permission', async () => {
     const { id } = (await as('author', 'POST', '/api/masters', { doc: api() })).json() as { id: number };
     expect((await as('issuer', 'POST', '/api/batches', { masterVersionId: id, proof: proofFor('issuer') })).json()).toMatchObject({ error: 'not_effective' });
