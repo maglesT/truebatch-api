@@ -5,6 +5,7 @@ import { masterChecks } from '../shared/master/checks.js';
 import { lineKind } from '../shared/master/kinds.js';
 import type { FormulaLine, MasterDoc, SettingValue, Step } from '../shared/master/schema.js';
 import { api, unplaced } from './engine-fixture.js';
+import { SKELETON_LIST, skeletonStages } from '../web/src/designer/skeletons.js';
 
 // Port of Tablets round 31: a tolerance (notBatch) is typed only, so a formula line's batch quantity of some kilograms
 // cannot let every round of drying to constant weight pass. And a formula line is refused for a setting of another
@@ -84,5 +85,25 @@ describe('a packing material counted in its line\'s unit (Tablets round 32, TB-P
     expect(unplaced(masterChecks(d)).filter((x) => x.rule === 'TB-P4').map((x) => `${x.path}: ${x.message}`))
       .toEqual([`${p}.unit: Drum label is counted in kg in the formula, but this step in units: make them the same`]);
     expect(unplaced(masterChecks(labels('units', 'units')[0])).filter((x) => x.rule === 'TB-P4')).toEqual([]);
+  });
+});
+
+describe('a repeat-until step whose stop check can never pass (Phase E screen run)', () => {
+  const reactStep = (d: MasterDoc) => d.stages.find((s) => s.key === 'step1')!.steps.find((t) => t.key === 'react')!;
+  it('the IPC check stops the rounds but no IPC limit is set: refused; End point seen as the stop, or the limit set: taken', () => {
+    const d = api();
+    delete reactStep(d).settings.ipcLimit;
+    expect(errors(d).filter((e) => e.includes('never passes'))).toEqual([expect.stringMatching(/\.flow: IPC against the end point stops the rounds, but IPC limit \(end point\) is not set, so it never passes/)]);
+    const e = api(); delete reactStep(e).settings.ipcLimit;
+    reactStep(e).flow = { kind: 'repeat-until', maxRounds: 10, stop: 'endPoint' };
+    expect(errors(e).filter((x) => x.includes('never passes'))).toEqual([]);
+    expect(errors(api())).toEqual([]);
+  });
+
+  it('the skeleton sets accountability limits on the pack stage only (a chemical stage loses material to the mother liquor)', () => {
+    for (const s of SKELETON_LIST) {
+      const yields = skeletonStages(s.id, api().header).flatMap((st) => st.steps.filter((t) => t.block.id === 'stage-yield').map((t) => `${st.key}: ${t.settings.accountabilityLimit ? 'limits' : 'none'}`));
+      for (const y of yields) expect(y).toBe(y.startsWith('pack:') ? 'pack: limits' : `${y.split(':')[0]}: none`);
+    }
   });
 });

@@ -11,8 +11,10 @@ type Header = MasterDoc['header'];
 interface StepPlan { block: string; key?: string; name?: string; checker?: boolean; settings?: (h: Header) => Record<string, SettingValue>; minMinutes?: number }
 interface StagePlan { key: string; name: string; kind?: Stage['kind']; role: string; rooms?: string[]; produces?: [string, number]; uses?: string[]; steps: StepPlan[] }
 
-const yieldStep = (theoretical: SettingValue, low = '90.0'): StepPlan => ({ block: 'stage-yield', key: 'yield', settings: () => ({
-  theoretical, yieldLimit: { low, high: '100.5', unit: '%' }, accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } }) });
+// Accountability limits only where the output, samples and rejects should add up to the input (packing); a chemical
+// stage loses material to the mother liquor (found in the Phase E screen run: 90 % yield, 90.7 % accountability).
+const yieldStep = (theoretical: SettingValue, low = '90.0', accountable = false): StepPlan => ({ block: 'stage-yield', key: 'yield', settings: () => ({
+  theoretical, yieldLimit: { low, high: '100.5', unit: '%' }, ...(accountable ? { accountabilityLimit: { low: '99.0', high: '100.5', unit: '%' } } : {}) }) });
 const sample = (key: string, name: string): StepPlan => ({ block: 'qa-sample', key, name });
 const step = (block: string, key: string, name?: string): StepPlan => ({ block, key, ...(name ? { name } : {}) });
 
@@ -23,7 +25,7 @@ const packAndLabel = (before: string): StagePlan => ({
     step('container-fill', 'fill', 'Fill and label the drums'), sample('qc-sample', 'QC sample'), sample('reserve-sample', 'Reserve sample'),
     step('container-return', 'drums-back', 'Count back the drums'),
     { block: 'printed-reconciliation', key: 'label-reconciliation', name: 'Reconcile the labels', settings: () => ({ unit: 'units', issued: { ref: 'pack/labels/issued' } }) },
-    { block: 'destruction' }, yieldStep({ ref: `${before}/yield/output` }, '99.0')],
+    { block: 'destruction' }, yieldStep({ ref: `${before}/yield/output` }, '99.0', true)],
 });
 
 // The finishing steps of the stage that makes the API: crystallise, isolate, dry, mill.
