@@ -53,6 +53,14 @@ test('TA-02 build a master from a skeleton, fix a master-check problem, then che
   await author.getByLabel('Role of Drum label').selectOption('packing material');
   await author.getByLabel('Unit of Drum label').selectOption('units');
   await author.getByLabel('Quantity of Drum label').fill('10');
+  await author.getByRole('button', { name: '+ Add a material' }).click();
+  await author.getByLabel('Material').fill('PM-201');
+  await author.getByRole('button', { name: /PM-201/ }).click();
+  const drum = 'Fibre drum 25 kg with liner';
+  await author.getByLabel(`Stage of ${drum}`).selectOption({ label: 'Pack and label' });
+  await author.getByLabel(`Role of ${drum}`).selectOption('packing material');
+  await author.getByLabel(`Unit of ${drum}`).selectOption('units');
+  await author.getByLabel(`Quantity of ${drum}`).fill('4');
 
   // The process: Blending and Pack and label, each starting with line clearance (TA-10).
   await author.getByRole('button', { name: 'Process', exact: true }).click();
@@ -85,6 +93,19 @@ test('TA-02 build a master from a skeleton, fix a master-check problem, then che
   await author.getByLabel('Packing material', { exact: true }).selectOption({ label: 'PM-101 Drum label' });
   await check.getByRole('button', { name: /Printed material is not set/ }).click();
   await author.getByLabel('Printed material').selectOption({ label: 'PM-101 Drum label' });
+  // The drums: issued by count, filled one by one to 25 kg, counted back at the end.
+  for (let i = 0; i < 2; i++) {
+    await check.getByRole('button', { name: /Container, liner or bag is not set/ }).first().click();
+    await author.getByLabel('Container, liner or bag').selectOption({ label: 'PM-201 Fibre drum 25 kg with liner' });
+  }
+  await check.getByRole('button', { name: /Count expected is not set/ }).click();
+  await author.getByLabel('Count expected', { exact: true }).selectOption({ label: 'a value I type' });
+  await author.getByLabel('Count expected: value').fill('4');
+  await check.getByRole('button', { name: /Nominal fill per container is not set/ }).click();
+  await author.getByLabel('Nominal fill per container', { exact: true }).selectOption({ label: 'a value I type' });
+  await author.getByLabel('Nominal fill per container: value').fill('25.0');
+  await author.getByLabel('Nominal fill per container: unit').selectOption('kg');
+  await author.getByLabel('Fill tolerance (± %)').fill('0.5');
   // TA-11: the stages name their rooms in the skeleton (Blending, Packing).
   await expect(check).toContainText('No problems');
   await expect(author.getByRole('status')).toHaveText('All changes saved');

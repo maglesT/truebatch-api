@@ -9,10 +9,13 @@ const TYPES = ['Balance', 'Analytical balance', 'Micro balance', 'IPC balance', 
   'Centrifuge', 'Agitated nutsche filter dryer', 'Vacuum tray dryer', 'Fluid bed dryer', 'Multimill', 'Micronizer', 'Sifter', 'Filter press', 'Air compressor', 'Manufacturing vessel'];
 const MACHINES = TYPES.map((type, i) => ({ code: `EQ-${i}`, type, room: null }));
 const BALANCES = ['Balance', 'IPC balance', 'Platform balance'];
+const REACTORS = ['Glass lined reactor', 'Stainless steel reactor', 'Manufacturing vessel'];
 const OFFERS: Record<string, string[]> = {
-  'weigh.balance': BALANCES,
-  'charge.machine': ['Bin blender', 'Glass lined reactor', 'Stainless steel reactor', 'Manufacturing vessel'],
-  'mix.machine': ['Bin blender', 'Glass lined reactor', 'Stainless steel reactor', 'Manufacturing vessel'],
+  'weigh.balance': BALANCES, 'container-fill.balance': BALANCES,
+  'charge.machine': ['Bin blender', ...REACTORS], 'mix.machine': ['Bin blender', ...REACTORS],
+  'charge-liquid.machine': REACTORS, 'react.machine': REACTORS, 'separate.machine': REACTORS, 'distil.machine': REACTORS,
+  'isolate.machine': ['Centrifuge', 'Agitated nutsche filter dryer'], 'filter-keep.machine': ['Agitated nutsche filter dryer', 'Filter press'],
+  'dry.machine': ['Agitated nutsche filter dryer', 'Vacuum tray dryer', 'Fluid bed dryer'], 'sieve.machine': ['Multimill', 'Micronizer', 'Sifter'],
 };
 
 describe('machine pickers on the demo master-data types', () => {
