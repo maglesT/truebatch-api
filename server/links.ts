@@ -69,10 +69,11 @@ type CcRow = { number: string; status: string; title: string | null; products: s
 const cc = (r: CcRow): ChangeRead => ({ number: r.number, status: r.status, title: r.title, products: r.products, qaApprovedAt: r.qa_approved_at });
 export const approvedChange = (c: ChangeRead) => c.qaApprovedAt !== null && CHANGE_STEPS.includes(c.status);
 const word = (x: string) => new RegExp(`(^|[^a-z0-9])${x.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`);
-/** Whether a change control's products name this product, by its code or its name (case-insensitive); 'none' when it names no product. */
+/** Whether a change control's products name this product, by its code or its name (case-insensitive); 'none' when it
+ * names no product (QMS publishes the word "none" when "None" is ticked). */
 export function namesProduct(c: ChangeRead, product: { productCode: string; productName: string }): 'yes' | 'no' | 'none' {
   const p = c.products?.trim().toLowerCase();
-  if (!p) return 'none';
+  if (!p || p === 'none') return 'none';
   return [product.productCode, product.productName].some((x) => x.trim() && word(x.trim()).test(p)) ? 'yes' : 'no';
 }
 export const qmsClient = (l: Link) => ({

@@ -510,7 +510,7 @@ describe('TA-02 QMS: a new master version needs a QA-approved change control', (
     expect(e!.payload.source.changeControl.shown).toMatch(/QMS names no product: QA checked that it covers API-001$/);
     const c = (products: string | null) => ({ number: 'CC', status: 'closed', title: null, qaApprovedAt: 'x', products });
     const prd = { productCode: 'FG-ATV20', productName: 'Atorvastatin calcium tablets 20 mg' };
-    expect([c('fg-atv20, FG-ATV40'), c('ATORVASTATIN CALCIUM TABLETS 20 MG'), c('FG-ATV200'), c(' '), c(null)].map((x) => namesProduct(x, prd))).toEqual(['yes', 'yes', 'no', 'none', 'none']);
+    expect([c('fg-atv20, FG-ATV40'), c('ATORVASTATIN CALCIUM TABLETS 20 MG'), c('FG-ATV200'), c(' '), c(null), c('none'), c(' None ')].map((x) => namesProduct(x, prd))).toEqual(['yes', 'yes', 'no', 'none', 'none', 'none', 'none']);
   });
 
   it('TA-02 QMS down: the number is typed, and another person makes the version effective', async () => {
