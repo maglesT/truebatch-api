@@ -3,7 +3,7 @@
 import { findBlock } from '../../../shared/blocks/index.js';
 import { masterChecks } from '../../../shared/master/checks.js';
 import { materialLines, type FormulaLine, type MasterDoc, type Stage, type Step } from '../../../shared/master/schema.js';
-import { perPackText, unitName } from '../../../shared/engine/stock.js';
+import { unitName } from '../../../shared/engine/stock.js';
 import { stepTitle } from '../../../shared/engine/batch.js';
 import { neededText } from '../../../shared/engine/training.js';
 import { grouped, placeLabel } from './model.js';
@@ -74,21 +74,7 @@ export function stepText(doc: MasterDoc, t: Step, j: number, units?: Units): str
 
 export function describeMaster(doc: MasterDoc, units?: Units): Section[] {
   const h = doc.header;
-  const p = doc.pack;
-  // A packing master (TB-P1) in packing words: the pack and its packing materials, no formula or coating.
-  const top: Section[] = p ? [
-    { key: 'header', title: 'Pack', lines: [
-      { key: 'product', text: `Pack product ${h.productCode}, ${h.productName}.` },
-      { key: 'bulk', text: `Packs the bulk tablets ${p.bulkCode}, ${p.bulkName}; tablet weight ${h.coreWeightMg} mg (for counts by weight).` },
-      { key: 'batch', text: `Standard packing batch ${grouped(h.batchSize)} tablets.` },
-      { key: 'pack', text: `${p.type[0]!.toUpperCase()}${p.type.slice(1)} of ${p.unitsPerPack} tablets; ${p.packsPerCarton} packs per carton.` },
-      { key: 'expiry', text: `Approved shelf life ${p.shelfLifeMonths} months; expiry ${p.expiryRule === 'same month' ? 'month of manufacture + shelf life' : 'month of manufacture + shelf life − 1'}.` },
-      { key: 'market', text: `For ${p.destination}${p.mrp ? `; MRP Rs. ${p.mrp} per pack` : ''}.` },
-      ...(p.serialisation ? [{ key: 'serialisation', text: `Serialisation checked${p.gtin ? `; pack GTIN ${p.gtin}` : ''}.` }] : []),
-    ] },
-    { key: 'formula', title: 'Packing materials', lines: p.materials.map((m) => ({ key: m.key,
-      text: `${m.name} (${m.code}), ${m.kind}: ${perPackText(m, units?.get(m.materialItemId))}${m.printed ? '; printed, issued with a second person and reconciled' : ''}${m.coded ? '; coded with the batch details' : ''}.` })) },
-  ] : [
+  const top: Section[] = [
     { key: 'header', title: 'Header', lines: [
       { key: 'product', text: `Product ${h.productCode}, ${h.productName}.` },
       { key: 'batch', text: `Batch size ${grouped(h.batchSize)} tablets.` },

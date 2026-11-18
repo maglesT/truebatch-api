@@ -13,13 +13,10 @@ import { answerDoc, placeOf, type Place } from './model.js';
 import { Preview } from './Preview.js';
 import { Process } from './Process.js';
 import { Review } from './Review.js';
-import { PackFields, PackMaterials } from './Pack.js';
 import { product } from '../product.js';
 
 export type Tab = 'header' | 'formula' | 'process' | 'preview' | 'review';
-// A packing master: the pack and its packing materials instead of the header and formula, and no calculation preview.
-const TABS: [Tab, string][] = product.packing ? [['header', 'Pack'], ['formula', 'Packing materials'], ['process', 'Process'], ['review', 'Review and approval']]
-  : [['header', 'Header'], ['formula', 'Formula'], ['process', 'Process'], ['preview', 'Calculation preview'], ['review', 'Review and approval']];
+const TABS: [Tab, string][] = [['header', 'Header'], ['formula', 'Formula'], ['process', 'Process'], ['preview', 'Calculation preview'], ['review', 'Review and approval']];
 type Save = { kind: 'saved' | 'saving' | 'pending' } | { kind: 'invalid' | 'error'; message: string };
 
 const FIELD: Record<string, string> = { mgPerTablet: 'mg per tablet', batchSize: 'batch size', coreWeightMg: 'core weight', coatedWeightMg: 'coated weight', name: 'name', key: 'key', holdHours: 'hold time', count: 'number of sub-batches' };
@@ -72,7 +69,7 @@ export function Designer({ me, versionId, onBack, onOpen }: { me: Me; versionId:
   const flush = async () => { if (timer.current && save.kind === 'pending' && latest.current) { window.clearTimeout(timer.current); await persist(latest.current); } };
 
   const parsed = useMemo(() => (doc ? masterSchema.safeParse(doc) : null), [doc]);
-  // The master's own checks, and (once master data is read) whether the floor finds a machine for each step (TB-11).
+  // The master's own checks, and (once master data is read) whether the floor finds a machine for each step (TA-11).
   const problems = useMemo(() => (parsed?.success ? [...masterChecks(parsed.data), ...(md ? placeChecks(parsed.data, md) : [])] : null), [parsed, md]);
   const go = (path: string) => { const p = placeOf(path); setPlace(p); setTab(p.tab); };
 
@@ -102,10 +99,8 @@ export function Designer({ me, versionId, onBack, onOpen }: { me: Me; versionId:
       <div className="designer">
         <div className="d-main">
           <fieldset className="plain" disabled={!editable}>
-            {tab === 'header' && <div className="card">{doc.pack ? <PackFields header={doc.header} pack={doc.pack} products={md.products} onChange={(header, pack) => change({ ...doc, header, pack })} />
-              : <HeaderFields header={doc.header} md={md} onChange={(header) => change({ ...doc, header })} />}</div>}
-            {tab === 'formula' && doc.pack && <PackMaterials doc={doc} md={md} onChange={change} />}
-            {tab === 'formula' && !doc.pack && <FormulaTable doc={doc} onChange={change} md={md} masters={others} selected={place.line} onSelect={(line) => setPlace({ tab: 'formula', line })} problems={problems ?? []} onAnswer={onAnswer} />}
+            {tab === 'header' && <div className="card"><HeaderFields header={doc.header} md={md} onChange={(header) => change({ ...doc, header })} /></div>}
+            {tab === 'formula' && <FormulaTable doc={doc} onChange={change} md={md} masters={others} selected={place.line} onSelect={(line) => setPlace({ tab: 'formula', line })} problems={problems ?? []} onAnswer={onAnswer} />}
             {tab === 'process' && <Process doc={doc} onChange={change} md={md} place={place} onPlace={setPlace} editable={!!editable} />}
           </fieldset>
           {tab === 'preview' && <Preview doc={doc} />}

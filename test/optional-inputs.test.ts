@@ -1,6 +1,6 @@
 // "$name?" promises that an optional field or setting left out is left out: a limit check of an optional reading not
 // given, or against an optional limit the master did not set, checks nothing. And a count may be a counted value. No
-// block of the library uses these yet (TrueBatch Injectables found them, in code it shares with this engine): these
+// block of the library uses these yet (TrueBatch API found them, in code it shares with this engine): these
 // test-only blocks do.
 import { describe, expect, it, vi } from 'vitest';
 import type { Block } from '../shared/blocks/format.js';

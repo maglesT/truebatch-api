@@ -3,14 +3,12 @@ import { BLOCKS, findBlock } from '../shared/blocks/index.js';
 import { blocking, masterChecks } from '../shared/master/checks.js';
 import { masterSchema } from '../shared/master/schema.js';
 import { stepTitle } from '../shared/engine/batch.js';
-import { perPackText } from '../shared/engine/stock.js';
 import { describeMaster, diffMasters, stepText } from '../web/src/designer/describe.js';
 import { dispensing, workedExample } from '../web/src/designer/example.js';
 import { answerDoc, earlierRefs, neededKind, scaleDoc, stepFrom } from '../web/src/designer/model.js';
 import { sentence, sentenceText } from '../web/src/designer/sentences.js';
 import { SKELETON_LIST, skeletonStages } from '../web/src/designer/skeletons.js';
 import { tablet, unplaced } from './engine-fixture.js';
-import { packing } from './packing-fixture.js';
 
 // The designer's pure parts: sentences instead of formulas, inputs offered by kind, worked examples and the
 // calculation preview through the engine, skeletons, copying to a new batch size, and the changes view.
@@ -70,26 +68,26 @@ describe('master designer', () => {
     expect(workedExample(d, 2, 1, { output: { value: '20.000', unit: 'kg' } }).results.yield).toMatchObject({ ok: true, check: { pass: false } });
   });
 
-  it('TB-13 the calculation preview adjusts the API for the lot and compensates the filler', () => {
+  it('TA-13 the calculation preview adjusts the API for the lot and compensates the filler', () => {
     const rows = dispensing(tablet(), { api: { assay: '98.0', lod: '2.0' } });
     expect(rows[0]!.adjusted).toMatchObject({ ok: true, value: expect.stringMatching(/^10\.41232/) });
     expect(rows[1]!.adjusted).toMatchObject({ ok: true, value: expect.stringMatching(/^11\.58767/) });
     expect(rows[2]!.adjusted).toBeUndefined();
   });
 
-  it('TB-10 the process skeletons are valid drafts and start every stage with line clearance; what they leave open is listed by the master check', () => {
+  it('TA-10 the process skeletons are valid drafts and start every stage with line clearance; what they leave open is listed by the master check', () => {
     const header = { productItemId: 'p', productCode: 'P', productName: 'P', batchSize: '100000', coreWeightMg: '250.0', coatedWeightMg: '257.5', dispensingRooms: ['RM-101'] };
     for (const s of SKELETON_LIST) {
       const doc = masterSchema.parse({ header, formula: [], stages: skeletonStages(s.id, header) });
       expect(doc.stages.every((st) => st.steps.every((t) => findBlock(t.block)))).toBe(true);
       expect(masterChecks(doc).every((p) => /not set|not checked|no core materials|choose the rooms/.test(p.message))).toBe(true);
     }
-    // TB-11: a master that weighs names its dispensing rooms; a new one starts with none (the author picks them).
+    // TA-11: a master that weighs names its dispensing rooms; a new one starts with none (the author picks them).
     const bare = masterSchema.parse({ header: { ...header, dispensingRooms: undefined }, formula: [], stages: skeletonStages(SKELETON_LIST[0]!.id, header) });
-    expect(masterChecks(bare).filter((p) => p.path === 'header.dispensingRooms')).toEqual([{ level: 'error', path: 'header.dispensingRooms', rule: 'TB-11',
+    expect(masterChecks(bare).filter((p) => p.path === 'header.dispensingRooms')).toEqual([{ level: 'error', path: 'header.dispensingRooms', rule: 'TA-11',
       message: 'The master weighs but names no dispensing rooms: choose them in the header (rooms of master data)' }]);
-    // The rooms: the usual areas where every plant has them; a preparation and blending are left for the author (TB-11).
-    const rooms = (id: string) => masterChecks(masterSchema.parse({ header, formula: [], stages: skeletonStages(id, header) })).filter((p) => p.rule === 'TB-11').map((p) => p.message.split(':')[0]);
+    // The rooms: the usual areas where every plant has them; a preparation and blending are left for the author (TA-11).
+    const rooms = (id: string) => masterChecks(masterSchema.parse({ header, formula: [], stages: skeletonStages(id, header) })).filter((p) => p.rule === 'TA-11').map((p) => p.message.split(':')[0]);
     expect(rooms('wet-granulation-film-coated')).toEqual(['Stage Binder solution', 'Stage Blending', 'Stage Coating suspension']);
     expect(skeletonStages('wet-granulation-film-coated', header).map((s) => s.roomTypes.join())).toEqual(['', 'Granulation', '', 'Compression', '', 'Coating']);
     const dc = skeletonStages('direct-compression-uncoated', header);
@@ -135,46 +133,6 @@ describe('master designer', () => {
     const lines = diff.flatMap((s) => s.lines.filter((l) => l.change !== 'same').map((l) => `${s.title} ${l.key} ${l.change}`));
     expect(lines).toEqual(['Formula mcc changed', 'Stage 2: Granulation about changed', 'Stage 3: Compression yield removed']);
     expect(describeMaster(prev).map((s) => s.title)).toEqual(['Header', 'Formula', 'Stage 1: Binder solution', 'Stage 2: Granulation', 'Stage 3: Compression', 'Stage 4: Coating']);
-  });
-
-  it('TB-P1 a packing master reads in packing words: the pack and its packing materials, no formula and no coating', () => {
-    const [top, materials] = describeMaster(packing());
-    expect([top!.title, materials!.title]).toEqual(['Pack', 'Packing materials']);
-    const text = [top, materials].flatMap((s) => s!.lines.map((l) => l.text)).join(' ');
-    expect(text).not.toMatch(/formula|uncoated|coated weight/i);
-    expect(text).toMatch(/Blister of 10 tablets; \d+ packs per carton\./);
-    expect(materials!.lines.length).toBe(packing().pack!.materials.length);
-  });
-
-  it('TB-P1 the plain view names a step\'s packing material by its name and code, and a count in master data\'s unit (nos), as the floor does', () => {
-    const units = new Map([['pm-foil', 'm'], ['pm-ctn', 'nos']]);
-    const sections = describeMaster(packing(), units);
-    const all = sections.flatMap((s) => s.lines.map((l) => l.text)).join(' ');
-    expect(all).not.toMatch(/the batch quantity of/);
-    expect(sections[1]!.lines.find((l) => l.key === 'carton')!.text).toBe('Carton (PM-103), carton: 1 carton per 10 packs; printed, issued with a second person and reconciled; coded with the batch details.');
-    // Without master data, as the master has it; a material master data counts in another unit keeps the master's.
-    expect(describeMaster(packing()).flatMap((s) => s.lines).find((l) => l.key === 'carton')!.text).toMatch(/: 1 carton per 10 packs/);
-    expect(all).toMatch(/Leaflet \(PM-104\), leaflet: 1 leaflet per 10 packs/);
-    // A count used once or more per pack, or a length, per pack (17 Nov 2026 run, F6).
-    expect(all).toMatch(/Printed aluminium foil \(PM-101\), foil: 0\.120 m per pack/);
-    expect(perPackText({ perPack: '0.002', unit: 'units', kind: 'shipper' })).toBe('1 shipper per 500 packs');
-    expect(perPackText({ perPack: '2', unit: 'units', kind: 'desiccant' }, 'nos')).toBe('2 nos per pack');
-    expect(perPackText({ perPack: '0.3', unit: 'units', kind: 'other' }, 'nos')).toBe('0.3 nos per pack');
-    const steps = sections.flatMap((s) => s.lines).filter((l) => /^\d+\. (Issue|Reconcile) /.test(l.text)).map((l) => l.text);
-    expect(steps.find((x) => /^\d+\. Issue Carton \(PM-103\): /.test(x))).toMatch(/Packing material: Carton \(PM-103\)\. Unit: nos\./);
-    expect(steps.find((x) => /^\d+\. Reconcile Printed aluminium foil \(PM-101\): /.test(x))).toMatch(/Printed material: Printed aluminium foil \(PM-101\)\. Unit: m\./);
-  });
-
-  it('the plain view titles each step as the floor does and never shows a step\'s internal key', () => {
-    const d = packing();
-    const all = d.stages.flatMap((s) => s.steps);
-    d.stages[1]!.steps[2]!.orderAfter = d.stages[1]!.steps[1]!.key;
-    const lines = describeMaster(d).filter((s) => s.key.startsWith('stage:')).flatMap((s) => s.lines.filter((l) => l.key !== 'about'));
-    expect(lines.map((l) => /^\d+\. ([^:]+):/.exec(l.text)?.[1])).toEqual(d.stages.flatMap((s) => s.steps.map((t) => stepTitle(d, t))));
-    for (const l of lines) for (const t of all) expect(l.text, l.key).not.toContain(`(${t.key})`);
-    expect(lines.map((l) => l.text).filter((x) => /Order-critical/.test(x)).map((x) => /Order-critical: [^.]*\.[^.]*\./.exec(x)![0]))
-      .toEqual([`Order-critical: after step 2. ${stepTitle(d, d.stages[1]!.steps[1]!)}.`]);
-    expect(lines.map((l) => /^\d+\. Issue [^:]+/.exec(l.text)?.[0]).filter(Boolean)).toEqual(['2. Issue Printed aluminium foil (PM-101)', '3. Issue PVC/PVDC film (PM-102)', '4. Issue Carton (PM-103)', '5. Issue Leaflet (PM-104)']);
   });
 
   it('calculation checks: the author answers a warning; the answer is kept in the master and shown in the review and changes views', () => {

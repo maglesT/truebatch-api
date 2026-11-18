@@ -76,7 +76,7 @@ export function c8PrintedData(i: C8Input): Outcome {
     let expected: string;
     if (i.kind === 'text') {
       expected = i.expected.trim();
-      // As printed, or after its label ("B.No. TB260001"); the number itself must be the same.
+      // As printed, or after its label ("B.No. TA260001"); the number itself must be the same.
       pass = [printed, printed.toUpperCase().replace(BATCH_LABEL, '')].some((p) => plain(p) === plain(expected));
     } else if (i.kind === 'money') {
       if (i.expected === undefined) {

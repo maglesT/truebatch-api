@@ -1,10 +1,10 @@
-// TB-22: the batch record as a PDF, the way the Logbook makes its copies. Everything comes from the master version and
+// TA-22: the batch record as a PDF, the way the Logbook makes its copies. Everything comes from the master version and
 // the events, worked out by the engine as on screen; nothing is typed again. Changed values are marked: the original
 // is struck through and kept with the reason, the person and the time.
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces.js';
 import { findBlock, type Block } from '../shared/blocks/index.js';
 import { materialLines, type Step } from '../shared/master/schema.js';
-import { batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, perPackText, trainingOf, trainingText, trainingTyped, skillText, bulkCheckedText, bulkNotCheckedText, bulkOpenText, type BulkDeviations, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
+import { batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, trainingOf, trainingText, trainingTyped, skillText, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
 import type { LoadedBatch } from './routes/batches.js';
 import { pageFrame, plant, runs } from './pdf.js';
 import { plantText } from '../shared/plant-time.js';
@@ -13,9 +13,8 @@ import { plantText } from '../shared/plant-time.js';
 export interface Signature { objectType: string; objectId: number; printedName: string; meaning: string; signedAt: Date; step: string | null }
 // deviationsRead: the deviations as the Deviations system has them now (null without the link). units: master data's
 // units of the materials by item id, a quantity named as master data names the same unit (nos for units), as on screen.
-// bulk: packing (whole-suite run, S24), the bulk batch's open deviations as read now (server/routes/batches.ts bulkDeviations).
 export interface RecordInput extends LoadedBatch { versionNo: number; issuedByName: string; signatures: Signature[]; deviationsRead?: ReadonlyMap<string, DeviationStatus> | null;
-  units?: ReadonlyMap<string, string>; bulk?: BulkDeviations | null }
+  units?: ReadonlyMap<string, string> }
 
 const MEANING: Record<string, string> = {
   issued: 'Issued', performed: 'Performed', verified: 'Verified (second person)', released: 'Released', rejected: 'Rejected',
@@ -75,44 +74,26 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
   const byId = new Map(steps.map((v) => [v.id, v]));
   const stepLabel = (id: string) => { const v = byId.get(id); return v ? `${doc.stages[v.key.stage]!.name} · ${stepName(v)}` : id; };
 
-  const record = doc.pack ? 'Packing record' : 'Batch record';
+  const record = 'Batch record';
   // A batch QA terminated: said at the top and in the decisions.
   const ended = batchEvents.find((b) => b.payload.terminated);
   const endedText = ended && terminatedText(ended, plant);
   // What a terminated batch never did is not "yet" to come (owner 16 Nov 2026).
   const notYet = (what: string) => (ended ? `not ${what} (terminated)` : `not ${what} yet`);
-  const facts = doc.pack ? steps.find((v) => v.id === '0.1.0.1') : undefined;
   const content: Content[] = [
     { text: runs(`${record} ${r.batch.batchNo}`), fontSize: 16, bold: true },
     { text: runs(`${h.productCode} · ${h.productName}`), fontSize: 11, margin: [0, 2, 0, 8] },
     { table: { widths: [90, '*', 90, '*', 90, '*'], body: [
-      [th('Product'), small(`${h.productCode} · ${h.productName}`), th('Batch no.'), small(r.batch.batchNo, { bold: true }), th('Status'), small(statusWords(view.status, !!doc.pack, true), { bold: true })],
-      doc.pack ? [th('Pack'), small(`${doc.pack.type}, ${doc.pack.unitsPerPack} tablets per pack, ${doc.pack.packsPerCarton} packs per carton; ${doc.pack.destination}${doc.pack.mrp ? `, MRP Rs. ${doc.pack.mrp}` : ''}`),
-        th('Bulk'), small(`${doc.pack.bulkCode} · batch ${valueText(facts?.values.bulk)} · ${valueText(facts?.values.tablets)} issued · line ${valueText(facts?.values.line)}${facts?.results.expiry?.ok ? ` · ${facts.results.expiry.shown}` : ''}`),
-        th('Master version'), small(`version ${r.versionNo}`)]
-        : [th('Batch size'), small(`${Number(h.batchSize).toLocaleString('en-IN')} tablets`), th('Core tablet weight'), small(`${h.coreWeightMg} mg${h.coatedWeightMg ? ` (coated ${h.coatedWeightMg} mg)` : ''}`), th('Master version'), small(`version ${r.versionNo}`)],
+      [th('Product'), small(`${h.productCode} · ${h.productName}`), th('Batch no.'), small(r.batch.batchNo, { bold: true }), th('Status'), small(statusWords(view.status, true), { bold: true })],
+      [th('Batch size'), small(`${Number(h.batchSize).toLocaleString('en-IN')} tablets`), th('Core tablet weight'), small(`${h.coreWeightMg} mg${h.coatedWeightMg ? ` (coated ${h.coatedWeightMg} mg)` : ''}`), th('Master version'), small(`version ${r.versionNo}`)],
       [th('Issued'), small(`${r.issuedByName}, ${plant(r.batch.issuedAt)}`), th('Times'), small('plant time (IST)'), th('Changed values'), small('marked CHANGED; the original is struck through, with the reason', { color: RED })],
     ] }, layout: 'lightHorizontalLines' },
     ...(endedText ? [small(endedText, { bold: true, color: RED, margin: [0, 6, 0, 0] })] : []),
   ];
 
-  // Packing: the packing materials, with the lots and quantities issued and their reconciliation.
-  const naming = (v: StepView, key: string, block: string) => stepOf(v).block.id === block && Object.values(stepOf(v).settings).some((x) => typeof x === 'object' && 'formula' in x && x.formula === key);
-  if (doc.pack) content.push(heading('Packing materials'), table([150, 70, 60, '*', '*'], ['Material', 'Kind', 'Quantity', 'Lots and quantities issued', 'Reconciliation'], doc.pack.materials.map((m) => [
-    small(`${m.code} · ${m.name}`), small(`${m.kind}${m.printed ? ', printed' : ''}${m.coded ? ', coded' : ''}`), small(perPackText(m, r.units?.get(m.materialItemId))),
-    small(steps.filter((v) => naming(v, m.key, 'pack-material-issue')).map((v) => `${v.values.lot === undefined ? 'not issued' : `Lot ${valueText(v.values.lot)}: ${valueText(v.values.issued, unitOf(v))}`} · ${stepName(v)}`).join('\n') || notYet('issued')),
-    // A count in master data's name for it (nos), as the per-pack column; the verdict once, after the line.
-    small(steps.filter((v) => naming(v, m.key, 'printed-reconciliation')).map((v) => {
-      const rec = v.results.reconciliation;
-      if (!rec?.ok) return notYet('reconciled');
-      const shown = withoutVerdict(rec.shown).replace(/\bunits\b/g, unitName('units', r.units?.get(m.materialItemId)));
-      return `${shown}: ${checksOf(rec).every(([, c]) => c.pass) ? 'PASS' : 'FAIL'}`;
-    }).join('\n') || (m.printed ? notYet('reconciled') : '—')),
-  ])));
-
   // The formula, with the lots and the quantities dispensed (the weighing steps that name the line).
-  if (!doc.pack) content.push(heading('Formula'));
-  if (!doc.pack) content.push(table([150, 90, 55, 80, '*'], ['Material', 'Role · place', 'mg per tablet', 'Batch quantity', 'Lots and dispensed quantities'], doc.formula.map((l) => {
+  content.push(heading('Formula'));
+  content.push(table([150, 90, 55, 80, '*'], ['Material', 'Role · place', 'mg per tablet', 'Batch quantity', 'Lots and dispensed quantities'], doc.formula.map((l) => {
     const q = lineQuantity(doc, [], { stage: 0, sub: 1, step: 0, round: 1 }, l, false, {});
     const weighed = steps.filter((v) => Object.values(stepOf(v).settings).some((s) => typeof s === 'object' && 'formula' in s && s.formula === l.key && findBlock(stepOf(v).block)?.gmp === 'weighing'));
     return [small(`${l.code} · ${l.name}`), small(`${ROLE[l.role] ?? l.role} · ${PLACE[l.place] ?? l.place}`), small(l.mgPerTablet), small(endOf(q)),
@@ -150,9 +131,7 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
           const sig = sigOf.get(e.id);
           const d = e.kind === 'note' ? devOf(e) : undefined;
           const extra = e.payload.reason ? ` · reason: ${e.payload.reason}` : e.payload.text ? ` · ${d ? `deviation ${deviationText(d)}: ` : ''}${e.payload.text}` : '';
-          // Packing: the batch facts are recorded when the batch is issued (the issuer starts the first step); the
-          // operator then receives the bulk and signs it done.
-          const kind = doc.pack && v.id === '0.1.0.1' && e.kind === 'started' ? 'Batch facts recorded at issue' : EVENT[e.kind];
+          const kind = EVENT[e.kind];
           // The signer's training in the step's skill (owner, 17 Nov 2026): from Recruitment, or typed by hand.
           const trained = trainingOf(e);
           const training = trained ? ` · ${trained.from === 'hand' ? trainingText(trained).toUpperCase() : trainingText(trained)}` : '';
@@ -179,15 +158,6 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
       small(!d ? 'note (no deviation number)' : d.status ? `${d.open ? 'OPEN: ' : ''}${deviationStatusWords(d.status)} in the Deviations system${d.closedAt ? `, ${plant(d.closedAt)}` : ''}` : d.open ? 'OPEN' : `closed by ${closed?.personName ?? ''}, ${plant(closed?.at)}: ${closed?.payload.reason ?? ''}`, d?.open ? { color: RED } : {})];
   })));
 
-  // Packing (whole-suite run, S24): the bulk batch's deviations still open, as read now; release waits for them. A link
-  // that did not answer: not checked, QA confirms by hand at release (the release decision below says what QA typed).
-  if (r.bulk) {
-    content.push(heading(`Open deviations of the bulk batch ${r.bulk.bulk}`));
-    content.push(r.bulk.state !== 'ok' ? small(`${bulkNotCheckedText(r.bulk)}: QA confirms by hand at release.`, { color: RED })
-      : r.bulk.open.length ? { stack: r.bulk.open.map((d) => small(`${bulkOpenText(r.bulk!.bulk, d)}${d.title ? ` · ${d.title}` : ''}`, { color: RED })) }
-      : small('None: every deviation of the bulk batch is closed in the Deviations system.'));
-  }
-
   // Signatures whose training was typed by hand because Recruitment was not reachable, for QA (owner, 17 Nov 2026);
   // only when the master names a training.
   if (doc.stages.some((s) => s.steps.some((t) => t.training))) {
@@ -209,12 +179,12 @@ export function batchRecordDoc(r: RecordInput, by: string, printedAt = new Date(
   content.push(heading('Release decision'));
   const decisions = batchEvents.filter((b) => b.kind !== 'deviation_closed');
   content.push(decisions.length ? { stack: decisions.map((b) => small(b === ended ? endedText! :
-    `${MEANING[b.kind] ?? b.kind}: ${b.personName}, ${plant(b.at)}${b.payload.reportNo ? ` · QC report ${b.payload.reportNo}` : ''}${b.payload.reason ? ` · reason: ${b.payload.reason}` : ''}${b.payload.bulk ? ` · ${bulkCheckedText(b.payload.bulk)}` : ''}`,
+    `${MEANING[b.kind] ?? b.kind}: ${b.personName}, ${plant(b.at)}${b.payload.reportNo ? ` · QC report ${b.payload.reportNo}` : ''}${b.payload.reason ? ` · reason: ${b.payload.reason}` : ''}`,
     { fontSize: 9, bold: b.kind === 'released' || b.kind === 'rejected', color: b.kind === 'rejected' ? RED : undefined, margin: [0, 0, 0, 2] })) }
-    : { text: `No decision yet: the batch is ${statusWords(view.status, !!doc.pack)}.`, italics: true, fontSize: 9 });
-  if (view.status !== 'released' && view.status !== 'rejected') content.push(small(`This copy was made while the batch is ${statusWords(view.status, !!doc.pack)}: it is not a released record.`, { color: RED, margin: [0, 4, 0, 0] }));
+    : { text: `No decision yet: the batch is ${statusWords(view.status)}.`, italics: true, fontSize: 9 });
+  if (view.status !== 'released' && view.status !== 'rejected') content.push(small(`This copy was made while the batch is ${statusWords(view.status)}: it is not a released record.`, { color: RED, margin: [0, 4, 0, 0] }));
 
-  return pageFrame(`${doc.pack ? 'TrueBatch Tablets Packing' : 'TrueBatch Tablets'} · ${record} ${r.batch.batchNo} · ${h.productCode} ${h.productName}`, by, content, printedAt, demo);
+  return pageFrame(`TrueBatch API · ${record} ${r.batch.batchNo} · ${h.productCode} ${h.productName}`, by, content, printedAt, demo);
 }
 
 /** The recorded values; a corrected value shows the original struck through, the reason, the person and the time. */

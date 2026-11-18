@@ -55,16 +55,6 @@ export function unitName(unit: string, stockUnit?: string | null): string {
   const p = published({ value: '1', unit }, stockUnit ?? undefined);
   return p.value === '1' ? p.unit : unit;
 }
-/**
- * A packing material's quantity per pack in words (owner's confirmation run, 17 Nov 2026): a count used less than once
- * per pack reads "1 carton per 10 packs", "1 shipper per 500 packs", not "0.1 nos"; else "2 nos per pack", "0.12 m per pack".
- */
-export function perPackText(m: { perPack: string; unit: string; kind: string }, stockUnit?: string | null): string {
-  const n = Number(m.perPack);
-  const packs = n > 0 && n < 1 ? Math.round(1 / n) : 0;
-  if (m.unit === 'units' && packs > 1 && Math.abs(packs * n - 1) < 1e-9) return `1${m.kind === 'other' ? '' : ` ${m.kind}`} per ${packs} packs`;
-  return `${m.perPack} ${unitName(m.unit, stockUnit)} per pack`;
-}
 const stockUnitOf = (v: StepView) => v.events.filter((e) => typeof e.payload.stockUnit === 'string').at(-1)?.payload.stockUnit as string | undefined;
 
 /**
@@ -103,43 +93,11 @@ export const usesOfLot = (doc: MasterDoc, steps: readonly StepView[], lot: strin
   materialUses(doc, steps, returns).filter((u) => sameLot(u.lot, lot));
 
 /**
- * Packing: the bulk batch and the tablets issued to a packing batch (its first step, bulk-issue, recorded at issue), as
- * one more "lot" QA's terminate asks about (what went back unused), so the tablets that went back can be issued again
- * (bulkLeft). Not an MMS lot: material_use_v1 does not list it.
- */
-export function bulkIssued(doc: MasterDoc, steps: readonly StepView[]): Returned | null {
-  const first = steps.find((v) => v.key.stage === 0 && v.key.step === 0 && v.key.round === 1);
-  if (!doc.pack || doc.stages[0]?.steps[0]?.block.id !== 'bulk-issue' || !first) return null;
-  const { bulk, tablets } = first.values;
-  return typeof bulk === 'string' && isQ(tablets) ? { lot: bulk, material: `bulk ${doc.pack.bulkCode} · ${doc.pack.bulkName}`, value: tablets.value, unit: tablets.unit } : null;
-}
-
-/** One packing batch's issue of a bulk batch: the tablets issued, less what went back when it was terminated. */
-export interface BulkIssue { batchNo: string; tablets: string; returned: string | null }
-/**
- * What is left of a bulk batch to issue to a packing batch (bug fix, 17 Nov 2026): its good tablets (batch_fact_v1)
- * less the tablets the other packing batches of it were issued, net of what a terminated one gave back. Never below 0.
- */
-export function bulkLeft(good: string, others: readonly BulkIssue[]): { issued: string; left: string } {
-  const issued = others.reduce((s, x) => s.plus(Dec.max(new Dec(x.tablets).minus(x.returned ?? 0), 0)), new Dec(0));
-  return { issued: issued.toString(), left: Dec.max(new Dec(good).minus(issued), 0).toString() };
-}
-/** Why the tablets typed (a part issue) cannot be issued from the bulk batch: more than 0, up to what is left. */
-export function bulkIssueProblem(bulk: string, typed: string | null, good: string, left: { issued: string; left: string }): string | null {
-  if (!new Dec(left.left).gt(0)) return `All ${good} good tablets of bulk batch ${bulk} are already issued to other packing batches: nothing is left to issue.`;
-  if (typed === null) return null;
-  if (!new Dec(typed).gt(0)) return 'Bulk tablets issued: give more than 0 tablets.';
-  if (new Dec(typed).gt(left.left)) return `Only ${left.left} tablets of bulk batch ${bulk} are left to issue (${good} good tablets, ${left.issued} already issued to other packing batches): issue ${left.left} or less.`;
-  return null;
-}
-
-/**
  * What the batch has used of each lot, per lot and unit as published, with its material: what QA's terminate asks
- * about. A packing batch: its bulk batch first (bulkIssued).
+ * about.
  */
 export function issuedLots(doc: MasterDoc, steps: readonly StepView[]): Returned[] {
-  const bulk = bulkIssued(doc, steps);
-  const out: Returned[] = bulk ? [bulk] : [];
+  const out: Returned[] = [];
   for (const u of materialUses(doc, steps)) {
     const had = out.find((x) => sameLot(x.lot, u.lot) && x.unit === u.quantity.unit);
     if (had) { had.value = new Dec(had.value).plus(u.quantity.value).toString(); continue; }

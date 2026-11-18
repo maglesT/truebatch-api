@@ -16,7 +16,7 @@ import { lineQuantity } from '../../../shared/engine/values.js';
 import { plantText } from '../../../shared/plant-time.js';
 import { dispensingRooms, emptyNote, inLogbook, machineRefusal, roomRefusal } from '../../../shared/engine/picks.js';
 import { materialLines } from '../../../shared/master/schema.js';
-import { perPackText, unitName } from '../../../shared/engine/stock.js';
+import { unitName } from '../../../shared/engine/stock.js';
 import { neededText, tickText, trainingOf, trainingText, type Skill, type Training } from '../../../shared/engine/training.js';
 
 type Dialog = { kind: 'done' | 'repeat' | 'check' | 'na' | 'send-back' | 'note' } | { kind: 'na-sign'; reason: string } | { kind: 'correct'; field: BlockField };
@@ -34,7 +34,7 @@ function settingsText(doc: BatchDetail['master']['doc'], block: Block, st: Step,
   return block.settings.flatMap((s): [string, string][] => {
     const v = st.settings[s.name];
     const m = v && typeof v === 'object' && 'formula' in v ? materialLines(doc).find((l) => l.key === v.formula) : undefined;
-    const what = m && `${m.code} · ${m.name}${'perPack' in m ? ` (${m.kind}, ${perPackText(m, mdUnit)})` : ''}`;
+    const what = m && `${m.code} · ${m.name}`;
     if (m && s.kind === 'quantity' && 'mgPerTablet' in m && typeof v === 'object' && 'formula' in v) {
       // Worked out by the server once a value is recorded; before that, the batch quantity (an adjusted one needs the lot).
       const r = row.results[s.name] ?? (v.adjusted ? undefined : lineQuantity(doc, [], row.key, m, false, {}));
@@ -50,7 +50,7 @@ function settingsText(doc: BatchDetail['master']['doc'], block: Block, st: Step,
 
 // The step screen: the instruction, only the fields the block needs, the results worked out by the server with their
 // worked line, and the actions open to this person. A step waiting for its check shows what was recorded to the
-// checker, on their own device (TB-08).
+// checker, on their own device (TA-08).
 export function StepScreen({ me, d, blocks, row, now, reload }: { me: Me; d: BatchDetail; blocks: Block[]; row: StepRow; now: number; reload: (b?: boolean) => Promise<void> }) {
   const doc = d.master.doc;
   const st = stepOf(doc, row.key);
@@ -82,7 +82,7 @@ export function StepScreen({ me, d, blocks, row, now, reload }: { me: Me; d: Bat
     return () => { live = false; };
   }, [material]);
   const shownUnit = (f: BlockField) => unitName(unitOf(f, st), mdUnit);
-  // Line clearance: the room's or line's previous batch (TB-10, pull don't type).
+  // Line clearance: the room's or line's previous batch (TA-10, pull don't type).
   const place = block.gmp === 'line-clearance' ? block.fields.find((f) => f.kind === 'room' || f.kind === 'machine') : undefined;
   const placeId = place && (row.values[place.name] as { itemId?: string } | undefined)?.itemId;
   const [prev, setPrev] = useState<{ of: string; text: string | null } | null>(null);
@@ -421,7 +421,7 @@ function Summary({ row, block, mdUnit }: { row: StepRow; block: Block; mdUnit: s
   );
 }
 
-// TB-06: the original value stays, crossed out, with who changed it, when and why.
+// TA-06: the original value stays, crossed out, with who changed it, when and why.
 function Replaced({ h, field, names, label, mdUnit }: { h: History | null; field: string; names: Map<number | null, string | null>; label?: string; mdUnit: string | null }) {
   const list = h?.replaced.filter((r) => r.field === field) ?? [];
   return <>{list.map((r, i) => (
