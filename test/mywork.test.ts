@@ -28,7 +28,7 @@ beforeAll(async () => {
   t.master.materials_.push({ ...item('m', 'M', 'M'), category: null, unit: 'kg' });
   t.master.equipment_.push({ ...item('eq-prs', 'PRS-01', 'Tablet press'), kind: 'equipment', type: 'tablet press', room: 'CMP-01' });
   const people = { author: ['truebatch_api.master.author'], issuer: ['truebatch_api.batch.issue'], asha: ['truebatch_api.batch.operate', 'truebatch_api.batch.check'],
-    ravi: ['truebatch_api.batch.check'], sam: ['truebatch_api.batch.supervise'], viewer: ['truebatch_api.view'] } as const;
+    ravi: ['truebatch_api.batch.check'], sam: ['truebatch_api.batch.supervise'], viewer: ['truebatch_api.view'], meera: ['truebatch_api.qa.release'] } as const;
   for (const [name, perms] of Object.entries(people)) {
     await seedUser(t.owner, name, [...perms]);
     cookies[name] = (await login(t.app, name)).cookie;
@@ -84,5 +84,24 @@ describe('My work', () => {
     const due = (await mine('asha')).find((w) => w.id === c.id)!.badges;
     expect(due).toMatchObject([{ kind: 'due', step: '0.1.0.1', stage: 'Stage 0', title: 'Process to an end point' }]);
     expect(Date.parse(due[0]!.at!) - Date.now()).toBeGreaterThan(29 * 60_000);
+  });
+});
+
+describe('a QA hold (Tablets round 33)', () => {
+  it('done, it is on QA\'s own list; only QA releases it, signed, once, and the next step opens', async () => {
+    const h = await issue(small([{ steps: [{ flow: { kind: 'qa-hold' } },
+      { block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '0.100 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' } } }] }]));
+    await act('asha', h.id, '0.1.0.1', 'start');
+    await act('asha', h.id, '0.1.0.1', 'record', { values: { reading: '6.0' } });
+    expect((await sign('asha', h.id, '0.1.0.1', 'done')).statusCode).toBe(200);
+    const hold = (await mine('meera')).find((w) => w.id === h.id)!.badges.filter((x) => x.kind === 'hold');
+    expect(hold).toEqual([expect.objectContaining({ kind: 'hold', step: '0.1.0.1' })]);
+    expect((await mine('asha')).find((w) => w.id === h.id)!.badges.some((x) => x.kind === 'hold')).toBe(false);
+    expect((await act('asha', h.id, '0.1.1.1', 'start')).statusCode).toBe(409);
+    expect([401, 403]).toContain((await sign('asha', h.id, '0.1.0.1', 'release-hold')).statusCode);
+    expect((await sign('meera', h.id, '0.1.0.1', 'release-hold')).statusCode).toBe(200);
+    expect((await sign('meera', h.id, '0.1.0.1', 'release-hold')).statusCode).toBe(409);
+    expect((await mine('meera')).find((w) => w.id === h.id)?.badges.some((x) => x.kind === 'hold') ?? false).toBe(false);
+    expect((await act('asha', h.id, '0.1.1.1', 'start')).statusCode).toBe(200);
   });
 });
