@@ -178,6 +178,8 @@ const quantityOf = (text: string | undefined) => { const m = QUANTITY.exec(text 
 // salt unit, negative filler, IU or CFU as a mass) come from the templates through the formula checks above. These
 // warnings need an answer, kept in the master document under their key; the answer counts while the warning reads the
 // same as when it was answered.
+// ICH Q3C Class 1 solvents.
+const CLASS1 = /\b(benzene|carbon tetrachloride|1,2-dichloroethane|1,1-dichloroethene|1,1,1-trichloroethane)\b/i;
 const WET = /\b(wet|cake|damp|solvent-wet)\b/i;
 const SIZE = /\b(d\s?\(?0?\.?[159]0?\)?|d10|d50|d90|dv\d+|particle size|surface area|polymorph|crystal form)\b/i;
 
@@ -189,6 +191,10 @@ function calculationChecks(doc: MasterDoc, out: Problem[]): void {
     return ok ? a.choice : undefined;
   };
   doc.formula.forEach((l, i) => {
+    // ICH Q3C Class 1 (template test M8): a solvent to avoid; its use needs a reason and a residual-solvent test.
+    if (CLASS1.test(l.name)) {
+      ask(`formula[${i}]`, `class-1/${l.key}`, `${l.name} is an ICH Q3C Class 1 solvent, to be avoided in API manufacture. Confirm that it is needed, with the reason, and that the API is tested for it as a residual solvent.`, ['needed, tested'], true);
+    }
     const salt = l.adjust?.salt;
     // A solvent-wet input weighed as if dry (F0204: about 23 % too little); answered, or corrected with the lot's solvent.
     const corrected = l.adjust?.potency?.basis === 'dried' || l.adjust?.potency?.basis === 'anhydrous and solvent-free' || l.adjust?.content?.formulaQuantityIs === 'wet';
