@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { blockProblems } from '../shared/blocks/format.js';
 import { BLOCKS, findBlock } from '../shared/blocks/index.js';
 import { masterChecks } from '../shared/master/checks.js';
-import type { MasterDoc, SettingValue, Step } from '../shared/master/schema.js';
+import { lineKind } from '../shared/master/kinds.js';
+import type { FormulaLine, MasterDoc, SettingValue, Step } from '../shared/master/schema.js';
 import { api, unplaced } from './engine-fixture.js';
 
 // Port of Tablets round 31: a tolerance (notBatch) is typed only, so a formula line's batch quantity of some kilograms
@@ -61,5 +62,27 @@ describe('a formula line on a setting of another kind than the line', () => {
       expect(errors(d).filter((e) => e.includes('a formula line gives'))).toEqual([]);
     }
     expect(errors(api())).toEqual([]);
+  });
+});
+
+describe('the kind of a formula line (lineKind), as the designer offers lines and the master checks them', () => {
+  it('kg, kg/kg and equivalents without a unit: a mass; L, L/kg and equivalents in L: a volume; units: a count', () => {
+    const k = (unit?: FormulaLine['unit']) => lineKind({ unit });
+    expect([k('kg'), k('kg/kg'), k(undefined), k('L'), k('L/kg'), k('units')]).toEqual(['mass', 'mass', 'mass', 'volume', 'volume', 'count']);
+    expect(api().formula.map((l) => `${l.key}: ${lineKind(l)}`)).toEqual(['ksm: mass', 'amine: mass', 'naoh: mass', 'water: volume', 'toluene: volume', 'hcl: volume', 'ipa: volume']);
+  });
+});
+
+describe('a packing material counted in its line\'s unit (Tablets round 32, TB-P4)', () => {
+  const labels = (lineUnit: FormulaLine['unit'], stepUnit: string) => {
+    const [d, p] = withStep('printed-reconciliation', { material: { formula: 'lbl' }, unit: stepUnit, issued: `100 ${stepUnit}` });
+    d.formula.push({ key: 'lbl', materialItemId: 'mat-lbl', code: 'MAT-009', name: 'Drum label', stage: 'step1', role: 'packing material', quantity: '10', unit: lineUnit });
+    return [d, p] as const;
+  };
+  it('a step in another unit than its formula line is refused; the same unit is taken', () => {
+    const [d, p] = labels('kg', 'units');
+    expect(unplaced(masterChecks(d)).filter((x) => x.rule === 'TB-P4').map((x) => `${x.path}: ${x.message}`))
+      .toEqual([`${p}.unit: Drum label is counted in kg in the formula, but this step in units: make them the same`]);
+    expect(unplaced(masterChecks(labels('units', 'units')[0])).filter((x) => x.rule === 'TB-P4')).toEqual([]);
   });
 });
