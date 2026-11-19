@@ -214,7 +214,7 @@ async function readValues(app: FastifyInstance, tx: Tx, doc: MasterDoc, key: Ste
       source[name] = { from: 'hand', link: 'lims', state: 'no_request' };
     } else if (f.qc === 'in_process' && typeof setting === 'string' && setting) {
       const o = otherRounds(doc, events, key, batchNo, name);
-      const q = await pullInProcess(app, f, x, setting, { batchNo, itemId: doc.header.productItemId, code: doc.header.productCode, request: labRequestId(batchNo, keyId(key)) }, o.taken, o.sampled);
+      const q = await pullInProcess(app, f, block.fields, x, setting, { batchNo, itemId: doc.header.productItemId, code: doc.header.productCode, request: labRequestId(batchNo, keyId(key)) }, o.taken, o.sampled);
       if (q.problems.length) { problems.push(...q.problems); continue; }
       source[name] = q.source;
       if (q.value) { out[name] = q.value; continue; }
@@ -616,7 +616,7 @@ export function batchRoutes(app: FastifyInstance, sql: Sql) {
       const taken = new Set(others.flatMap((o) => [...o.taken]));
       const r = await usableInProcess(app, { batchNo: l.batch.batchNo, itemId: l.doc.header.productItemId, code: l.doc.header.productCode, request }, units, taken);
       return { link: r.link, request, coas: [], results: r.results.map((x) => ({ resultId: x.resultId, coaNumber: x.coaNumber, testName: x.testName, reported: x.reported, unit: x.unit,
-        individual: x.individual ?? null, figure: x.figure ?? null, requestId: x.requestId ?? null, shown: inProcessText(x, x.requestId ?? request, others[0]?.sampled(x.requestId ?? request)) })) };
+        individual: x.individual ?? null, figure: x.figure ?? null, requestId: x.requestId ?? null, ipcField: x.ipcField ?? null, shown: inProcessText(x, x.requestId ?? request, others[0]?.sampled(x.requestId ?? request)) })) };
     }
     const key = req.query.key ? parseKey(req.query.key) : null;
     const st = key ? l.doc.stages[key.stage]?.steps[key.step] : undefined;

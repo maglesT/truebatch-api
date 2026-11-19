@@ -8,7 +8,7 @@ import {
 import { Alerts } from './BatchScreen.js';
 import { deviationText } from '../../../shared/engine/release.js';
 import { FieldInput, type InProcessPicks, type QcPick } from './Fields.js';
-import { inProcessFit, labRequestId, sameUnit } from '../../../shared/engine/lims.js';
+import { answersField, inProcessFit, labRequestId, sameUnit } from '../../../shared/engine/lims.js';
 import { DemoSkip } from './DemoSkip.js';
 import { ReasonDialog } from './ReasonDialog.js';
 import { CERTIFICATE, fieldLabel, handEntered, LINK_OF } from '../../../shared/engine/links.js';
@@ -112,8 +112,9 @@ export function StepScreen({ me, d, blocks, row, now, reload }: { me: Me; d: Bat
     if (f.qc !== 'in_process' || !ipResults || ipResults.noRequest) return undefined;
     const offered: QcPick[] = [];
     const refused: string[] = [];
-    for (const r of (ipResults.results ?? []).filter((x) => sameUnit(x.unit, unitOf(f, st)))) {
-      const fit = inProcessFit(r, f, unitOf(f, st));
+    // Tablets round 44: a result of another field's test (ipcField) is not this field's: neither offered nor listed as refused.
+    for (const r of (ipResults.results ?? []).filter((x) => sameUnit(x.unit, unitOf(f, st)) && answersField(x, f))) {
+      const fit = inProcessFit(r, f, unitOf(f, st), block.fields);
       if ('error' in fit) refused.push(fit.error); else offered.push(r);
     }
     return { request: ipResults.request ?? labRequestId(d.batch.batchNo, row.id), offered, refused };

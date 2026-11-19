@@ -3,7 +3,7 @@ import { connect, type Sql } from '../server/db.js';
 import { links } from '../server/links.js';
 import { findBlock } from '../shared/blocks/index.js';
 import { blockProblems, type Block } from '../shared/blocks/format.js';
-import { coaRefusal, inProcessFit, inProcessText, labTests, requestFits, sameUnit, type Coa, type QcResult } from '../shared/engine/lims.js';
+import { answersField, coaRefusal, fieldRefusal, inProcessFit, inProcessText, labTests, requestFits, sameUnit, type Coa, type QcResult } from '../shared/engine/lims.js';
 import { labRequestOf, loadBatch, recordInput } from '../server/routes/batches.js';
 import { batchRecordDoc } from '../server/batch-record.js';
 import { handWhy } from '../shared/engine/links.js';
@@ -102,7 +102,7 @@ beforeAll(async () => {
       create table ${L}.result_v1 (result_id uuid, coa_id uuid, coa_number text, sample_number text, lot_number text, item_master_id text, item_code text,
         test_key text, test_name text, value numeric, unit text, shown text, limit_text text, passed boolean, method_code text, analysis_number text,
         decision text, decided_at timestamptz, read_at timestamptz default now(), data_as_of timestamptz default now(), reported text, outside_lab text,
-        request_id text, individual_values numeric[], figure text);
+        request_id text, individual_values numeric[], figure text, ipc_field text);
       grant usage on schema ${L} to truebatch_api_app;
       grant select on all tables in schema ${L} to truebatch_api_app;`);
     provider = connect(TEST_DATABASE_URL, { role: 'truebatch_api_app', link: true });
@@ -151,16 +151,16 @@ type Picks = { link: string; request: string; results: { resultId: string; coaNu
 const picks = async (id: number, key: string) => (await as('asha', 'GET', `/api/batches/${id}/lims?request=${key}&units=${encodeURIComponent(encodeURIComponent('%'))}`)).json() as Picks;
 let n = 0;
 /** An approved in-process report of `request` in LIMS with one result (reported, unit). */
-async function reported(batchNo: string, request: string, figure: string, unit = '%', o: { purpose?: string; decision?: string } = {}) {
+async function reported(batchNo: string, request: string, figure: string, unit = '%', o: { purpose?: string; decision?: string; ipcField?: string } = {}) {
   n += 1;
   const number = `IPR26${String(n).padStart(3, '0')}`;
   const id = `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
   const decision = o.decision ?? 'APPROVED';
   await t.owner.unsafe(`insert into ${L}.coa_v1 (coa_id, coa_number, sample_number, lot_number, item_kind, item_master_id, item_code, item_name, purpose, decision, decided_at, decided_by, request_id)
     values ($1, $2, $3, $4, 'MATERIAL', 'p', 'P', 'P', $5, $6, now(), 'QC ONE', $7)`, [id, decision === 'APPROVED' ? number : null, `LS26${n}`, batchNo, o.purpose ?? 'in_process', decision, request]);
-  await t.owner.unsafe(`insert into ${L}.result_v1 (result_id, coa_id, coa_number, lot_number, test_key, test_name, unit, limit_text, analysis_number, decision, decided_at, reported, request_id, figure)
-    values ($1, $2, $3, $4, 'kf', 'Water by KF', $5, 'NMT 0.5', 'LA26001', $6, now(), $7, $8, 'result')`,
-  [`00000000-0000-0000-1111-${String(n).padStart(12, '0')}`, id, decision === 'APPROVED' ? number : null, batchNo, unit, decision, figure, request]);
+  await t.owner.unsafe(`insert into ${L}.result_v1 (result_id, coa_id, coa_number, lot_number, test_key, test_name, unit, limit_text, analysis_number, decision, decided_at, reported, request_id, figure, ipc_field)
+    values ($1, $2, $3, $4, 'kf', 'Water by KF', $5, 'NMT 0.5', 'LA26001', $6, now(), $7, $8, 'result', $9)`,
+  [`00000000-0000-0000-1111-${String(n).padStart(12, '0')}`, id, decision === 'APPROVED' ? number : null, batchNo, unit, decision, figure, request, o.ipcField ?? null]);
   return number;
 }
 
@@ -282,5 +282,31 @@ describe('Tablets round 43: a step started before LIMS in-process requests is ty
     expect(((await as('asha', 'GET', `/api/batches/${b.id}`)).json() as { steps: { id: string; state: string }[] }).steps.find((s) => s.id === '0.1.0.1')!.state).toBe('done_awaiting_check');
     const l = (await loadBatch(t.sql, b.id))!;
     expect(JSON.stringify(batchRecordDoc(await recordInput(t.sql, l, t.master), 'ASHA', new Date(), false))).toContain('BY HAND: started before LIMS in-process requests');
+  });
+});
+
+describe('Tablets round 44: a result that names the field it answers (result_v1.ipc_field) fills only that field', () => {
+  const react = findBlock({ id: 'react', version: 1 })!;
+  const ipc = react.fields.find((f) => f.name === 'ipcResult')!;
+  it('no field named (an older LIMS): matched by its unit; its own field: taken; another field: refused, naming both', () => {
+    expect(answersField(result({ ipcField: null }), field)).toBe(true);
+    expect(answersField(result({ ipcField: 'result' }), field)).toBe(true);
+    expect(answersField(result({ ipcField: 'ipcResult' }), field)).toBe(false);
+    expect(fieldRefusal(result({ ipcField: 'ph' }), ipc, react.fields)).toBe('Water by KF of report IPR26001 answers pH, not IPC result.');
+    expect(inProcessFit(result({ ipcField: 'ph' }), ipc, '%', react.fields)).toEqual({ error: 'Water by KF of report IPR26001 answers pH, not IPC result.' });
+    expect(inProcessFit(result({ ipcField: 'ipcResult' }), ipc, '%', react.fields)).toEqual({ take: { ipcResult: '0.42' } });
+  });
+
+  it('TA-14 the step is offered only the results of its own field; another field\'s result is refused when picked', async () => {
+    const b = await issue();
+    await act(b.id, '0.1.0.1', 'start');
+    const own = await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.42', '%', { ipcField: 'result' });
+    await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.10', '%', { ipcField: 'other' });
+    const p = await picks(b.id, '0.1.0.1');
+    expect(p.results.map((r) => [r.coaNumber, (r as { ipcField?: string }).ipcField])).toEqual([[own, 'result'], [expect.any(String), 'other']]);
+    const other = p.results.find((r) => r.coaNumber !== own)!;
+    expect(await problems(record(b.id, '0.1.0.1', { result: { lims: other.resultId } }))).toEqual([`Water by KF of report ${other.coaNumber} answers other, not Result.`]);
+    expect((await record(b.id, '0.1.0.1', { result: { lims: p.results.find((r) => r.coaNumber === own)!.resultId } })).statusCode).toBe(200);
+    expect((await stepOf(b.id, '0.1.0.1')).values.result).toEqual({ value: '0.42', unit: '%' });
   });
 });
