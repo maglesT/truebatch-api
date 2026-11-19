@@ -1,6 +1,7 @@
 /**
  * Master checks: pure checks over one master document. Each problem is an error (⛔, the version cannot be approved)
- * or a warning (⚠️), with the path to the item. Template settings are checked by the templates library itself.
+ * or a warning (⚠️), with the path to the item; an info line (ℹ️, Tablets round 45) only tells the author something to
+ * know. Template settings are checked by the templates library itself.
  * The calculation checks (calculationChecks below) are error-proofing of the calculations, not GMP rules.
  */
 import { findBlock, type Block } from '../blocks/index.js';
@@ -9,10 +10,11 @@ import { evaluate, keyInput, lineQuantity, molarTheoretical } from '../engine/va
 import { materialLines, type Answer, type Limit, type MasterDoc, type SettingValue } from './schema.js';
 import { lineKind, lineUnit, UNIT_STEPS, neededKind, unitKindProblem, what as kindWords } from './kinds.js';
 import { isBalance } from '../engine/picks.js';
+import { ipcCodes } from '../engine/lims.js';
 
 /** A warning the author answers: one of the options, with a reason when `needsReason`. */
 export interface Question { key: string; options: string[]; needsReason: boolean; answer?: Answer }
-export interface Problem { level: 'error' | 'warning'; path: string; message: string; rule?: string; question?: Question }
+export interface Problem { level: 'error' | 'warning' | 'info'; path: string; message: string; rule?: string; question?: Question }
 
 /**
  * A message in plain words for the people who read it: without the internal codes of the rules (TA-11), templates
@@ -123,6 +125,13 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       if (block.periodic && st.everyMinutes && st.everyMinutes > block.periodic.maxMinutes) {
         error(`${p}.everyMinutes`, `Periodic checks every ${st.everyMinutes} min: they must be at least every ${block.periodic.maxMinutes} min`, 'TA-15');
       }
+      // Tablets round 45: an in-process block in the master more than once (a reaction in two stages) has a code for each
+      // occurrence ('@1', '@2'), which LIMS's in-process specification maps one by one. API: only a field whose unit is
+      // set opens a request (a reaction with a TLC or visual end point has no IPC unit), so only those are told.
+      const times = doc.stages.reduce((n, x) => n + x.steps.filter((y) => y.block.id === st.block.id).length, 0);
+      const asked = block.fields.filter((f) => !f.unit?.startsWith('$') || typeof st.settings[f.unit.slice(1)] === 'string');
+      const codes = [...new Set(Object.values(ipcCodes(doc, si, ti, asked)))];
+      if (times > 1 && codes.length) out.push({ level: 'info', path: p, message: `${block.name} is in this master ${times} times: this step's in-process test is ${codes.join(', ')}. LIMS specification must map each occurrence` });
     });
   });
   packChecks(doc, error);

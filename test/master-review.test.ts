@@ -61,12 +61,12 @@ describe('master review and approval', () => {
     crystallise.settings.temperatureLimit = { low: '0', high: '10', unit: 'min' };
     const { id } = await draft(doc);
     const checks = (await as('author', 'GET', `/api/master-versions/${id}/checks`)).json() as { problems: { level: string; rule?: string; path: string; message: string }[] };
-    expect(checks.problems).toEqual([{ level: 'error', rule: 'TA-01', path: 'stages[2].steps[1].settings.temperatureLimit', message: expect.stringMatching(/^Temperature limits: min is a time, but the value checked is a temperature/) }]);
+    expect(checks.problems.filter((p) => p.level !== 'info')).toEqual([{ level: 'error', rule: 'TA-01', path: 'stages[2].steps[1].settings.temperatureLimit', message: expect.stringMatching(/^Temperature limits: min is a time, but the value checked is a temperature/) }]);
     expect((await act('author', id, 'submit')).json().error).toBe('master_has_errors');
     // The same limit in a unit of the right kind is accepted.
     crystallise.settings.temperatureLimit = { low: '273', high: '283', unit: 'K' };
     expect((await as('author', 'PUT', `/api/master-versions/${id}`, { doc })).statusCode).toBe(200);
-    expect(((await as('author', 'GET', `/api/master-versions/${id}/checks`)).json() as { problems: unknown[] }).problems).toEqual([]);
+    expect(((await as('author', 'GET', `/api/master-versions/${id}/checks`)).json() as { problems: { level: string }[] }).problems.filter((p) => p.level !== 'info')).toEqual([]);
     expect((await act('author', id, 'submit')).statusCode).toBe(200);
   });
 

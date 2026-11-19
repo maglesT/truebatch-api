@@ -16,7 +16,7 @@ import type { MasterDoc } from '../../shared/master/schema.js';
 import { Dec } from '../../shared/templates/index.js';
 import {
   ACTIONS, BATCH_ACTIONS, CERTIFICATE, retestDate, DEVIATION_DONE, LINK_OF, MATERIAL_USE, batchRefusal, filedKey, inLotUnit, issuedLots, returnProblems, returnsOf, usedQuantity, usesOfLot, stepLabel, stepPlace, stepTitle, handFields, isHand, batchView, doneProblems, evaluate, lateItems, openSteps, parseKey, readValue, refusal, review, timers,
-  trainingCheck, trainingTyped, coaText, isPick, currentValues, endsTheRounds, inProcessText, keyId, labRequestId, labTests, requestRound, type Training,
+  trainingCheck, trainingTyped, coaText, isPick, currentValues, endsTheRounds, inProcessText, keyId, labRequestId, labTests, ipcCodes, requestRound, type Training,
   type Action, type BatchAction, type BatchEvent, type DeviationStatus, type LinkState, type Source, type StageView, type Stored, type StepEvent, type StepKey, type StepView, type Timer, type Value,
 } from '../../shared/engine/index.js';
 
@@ -123,7 +123,8 @@ export function labRequestOf(doc: MasterDoc, key: StepKey): { stage: string; ste
   const st = stage?.steps[key.step];
   const block = st && findBlock(st.block);
   if (!stage || !st || !block) return null;
-  const tests = labTests(block.fields, (f) => { const u = f.unit?.startsWith('$') ? st.settings[f.unit.slice(1)] : f.unit; return typeof u === 'string' ? u : ''; });
+  const tests = labTests(block.fields, (f) => { const u = f.unit?.startsWith('$') ? st.settings[f.unit.slice(1)] : f.unit; return typeof u === 'string' ? u : ''; },
+    ipcCodes(doc, key.stage, key.step, block.fields));
   if (!tests.length) return null;
   const extra = [stage.kind === 'sub-batch' ? `sub-batch ${key.sub}` : '', st.flow.kind === 'repeat-until' ? `round ${key.round}` : ''].filter(Boolean).join(', ');
   return { stage: stage.name, step: `${stepTitle(doc, st)}${extra ? ` (${extra})` : ''}`, tests };
@@ -214,7 +215,8 @@ async function readValues(app: FastifyInstance, tx: Tx, doc: MasterDoc, key: Ste
       source[name] = { from: 'hand', link: 'lims', state: 'no_request' };
     } else if (f.qc === 'in_process' && typeof setting === 'string' && setting) {
       const o = otherRounds(doc, events, key, batchNo, name);
-      const q = await pullInProcess(app, f, block.fields, x, setting, { batchNo, itemId: doc.header.productItemId, code: doc.header.productCode, request: labRequestId(batchNo, keyId(key)) }, o.taken, o.sampled);
+      const q = await pullInProcess(app, f, block.fields, x, setting, { batchNo, itemId: doc.header.productItemId, code: doc.header.productCode, request: labRequestId(batchNo, keyId(key)) }, o.taken, o.sampled,
+        ipcCodes(doc, key.stage, key.step, block.fields));
       if (q.problems.length) { problems.push(...q.problems); continue; }
       source[name] = q.source;
       if (q.value) { out[name] = q.value; continue; }
@@ -616,7 +618,7 @@ export function batchRoutes(app: FastifyInstance, sql: Sql) {
       const taken = new Set(others.flatMap((o) => [...o.taken]));
       const r = await usableInProcess(app, { batchNo: l.batch.batchNo, itemId: l.doc.header.productItemId, code: l.doc.header.productCode, request }, units, taken);
       return { link: r.link, request, coas: [], results: r.results.map((x) => ({ resultId: x.resultId, coaNumber: x.coaNumber, testName: x.testName, reported: x.reported, unit: x.unit,
-        individual: x.individual ?? null, figure: x.figure ?? null, requestId: x.requestId ?? null, ipcField: x.ipcField ?? null, shown: inProcessText(x, x.requestId ?? request, others[0]?.sampled(x.requestId ?? request)) })) };
+        individual: x.individual ?? null, figure: x.figure ?? null, requestId: x.requestId ?? null, ipcField: x.ipcField ?? null, ipcCode: x.ipcCode ?? null, shown: inProcessText(x, x.requestId ?? request, others[0]?.sampled(x.requestId ?? request)) })) };
     }
     const key = req.query.key ? parseKey(req.query.key) : null;
     const st = key ? l.doc.stages[key.stage]?.steps[key.step] : undefined;

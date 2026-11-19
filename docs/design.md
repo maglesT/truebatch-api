@@ -116,7 +116,13 @@ answering) or **ok**.
   A step started before this (its "started" event has no lab request) is never stuck: its in-process fields are typed
   by hand even while LIMS answers ("BY HAND: started before LIMS in-process requests"), checked by a second person and
   listed for QA (Tablets round 43). A result that names the field it answers (result_v1.ipc_field, Tablets round 44)
-  fills only that field; one that names none is matched by its unit.
+  fills only that field; one that names none is matched by its unit. Tablets round 45 (agreed with LIMS: its
+  in-process specification is per product): each test of `lab_request_v1.tests` has a `code` unique within the master
+  (`ipcCodes`), '<block id>.<field name>' ('react.ipcResult', 'lab-test.result'), with '@<n>' when the block is in the
+  master more than once (n: its occurrence, stages and steps in order: 'react.ipcResult@2'); the master check shows an
+  info line (ℹ️, never blocking) on each such step that opens a request: "LIMS specification must map each occurrence".
+  A result naming its code (result_v1.ipc_code) fills only the field of that code; without it the round 44 rule holds.
+  The view is replaced in place (db/migrations/0021, same name and columns); a request opened before has code null.
 - **Published** (`db/migrations/0006_report_views.sql`): `batch_fact_v1` and `equipment_use_v1` with Batchwright's
   names and columns, so the Logbook and Deviations read TrueBatch as they read Batchwright, and `deviation_note_v1`
   for Deviations to file notes later. `batch_fact_v1` has one more column at its end (`0007`): `manufactured_on`, the

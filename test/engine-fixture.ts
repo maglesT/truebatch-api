@@ -70,7 +70,8 @@ export function placed(doc: MasterDoc): MasterDoc {
     steps: s.steps.some((t) => t.block.id === 'line-clearance') ? s.steps : [clearance, ...s.steps] })) };
 }
 /** Leaves out the problems of stages that name no rooms (TA-11, tested in master-checks.test.ts). */
-export const unplaced = <T extends { rule?: string; path: string }>(problems: T[]) => problems.filter((p) => !(p.rule === 'TA-11' && p.path.endsWith('.roomTypes')));
+export const unplaced = <T extends { rule?: string; path: string }>(problems: T[]) => problems.filter((p) => !(p.rule === 'TA-11' && p.path.endsWith('.roomTypes')) && (p as { level?: string }).level !== 'info');
+// (Tablets round 45: an info line, never blocking, is left out too: the fixture has a reaction in two stages.)
 
 /** A small master with the given stages; each step defaults to a "check a value" step without a checker. */
 export function small(stages: object[]): MasterDoc {

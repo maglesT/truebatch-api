@@ -37,7 +37,7 @@ describe('blocks are data', () => {
 describe('master checks', () => {
   it('the fixture API master passes every check', () => {
     expect(checks(api())).toEqual([]);
-    expect(masterChecks(placed(api()))).toEqual([]);
+    expect(unplaced(masterChecks(placed(api())))).toEqual([]);
   });
 
   it('TA-11 a stage that works machines or names a room, with no rooms chosen, is an error; balances alone are not', () => {
