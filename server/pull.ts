@@ -164,7 +164,7 @@ export async function usableInProcess(app: FastifyInstance, want: InProcessFor, 
  * figure; a typed value is refused. Absent or down: typed by hand (a second person checks it, QA's review lists it); a
  * pick is then refused. `sampled`: the round and time a request opened (the record says which sample was used).
  */
-export async function pullInProcess(app: FastifyInstance, f: BlockField, raw: unknown, unit: string, want: InProcessFor, taken: ReadonlySet<string>,
+export async function pullInProcess(app: FastifyInstance, f: BlockField, fields: readonly BlockField[], raw: unknown, unit: string, want: InProcessFor, taken: ReadonlySet<string>,
   sampled: (request: string) => { round?: number; at?: string } | undefined): Promise<Pulled & { value?: Value }> {
   const r = await usableInProcess(app, want, [unit]);
   if (r.link !== 'ok') return isPick(raw) ? refused(`LIMS does not answer now: type ${f.label} from the QC report.`) : hand('lims', r.link);
@@ -172,7 +172,7 @@ export async function pullInProcess(app: FastifyInstance, f: BlockField, raw: un
   const x = r.results.find((y) => y.resultId === raw.lims);
   if (!x) return refused(`${f.label}: that result is not a result in ${unit} of an approved in-process report of request ${want.request} (this step) in LIMS.`);
   if (taken.has(x.resultId)) return refused(`${f.label}: in-process report ${x.coaNumber} (request ${x.requestId}) was used in another round of this step: one result fills one round.`);
-  const fit = inProcessFit(x, f, unit);
+  const fit = inProcessFit(x, f, unit, fields);
   if ('error' in fit) return refused(fit.error);
   const request = x.requestId ?? want.request;
   const source: Source = { from: 'lims', asOf: null, shown: inProcessText(x, request, sampled(request)), ref: x.resultId, request };

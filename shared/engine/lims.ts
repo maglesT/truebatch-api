@@ -31,6 +31,8 @@ export interface QcResult {
   /** The lab request (in-process), the individual values in LIMS's order (null when not individual), and what `reported`
    * is: 'mean' | 'AV' | 'result' (null from a LIMS without the column). */
   requestId?: string | null; individual?: string[] | null; figure?: string | null;
+  /** Tablets round 44: the TrueBatch field an in-process result answers (result_v1.ipc_field; null from an older LIMS). */
+  ipcField?: string | null;
 }
 /** What the CoA must be of: this batch (of the API), or this lot of the step's material. */
 export type CoaFor =
@@ -109,6 +111,19 @@ export interface LabTest { name: string; label: string; unit: string; individual
 export const labTests = (fields: readonly BlockField[], unitOf: (f: BlockField) => string): LabTest[] =>
   fields.filter((f) => f.qc === 'in_process' && unitOf(f)).map((f) => ({ name: f.name, label: f.label, unit: unitOf(f), individual: f.count ?? null }));
 
+/**
+ * Tablets round 44: whether a result may fill field `f`: a result that names no field (an older LIMS) may fill any field
+ * in its unit; one that names a field (result_v1.ipc_field) fills only that field, so in a step with several fields in
+ * one unit a result of one test never goes into another. (Tablets also lets a staged list fill either stage; API has none.)
+ */
+export const answersField = (r: Pick<QcResult, 'ipcField'>, f: BlockField) => !r.ipcField || r.ipcField === f.name;
+/** Why this result may not fill field `f` (it answers another field of `fields`), in plain words; null when it may. */
+export function fieldRefusal(r: Pick<QcResult, 'ipcField' | 'testName' | 'coaNumber'>, f: BlockField, fields: readonly BlockField[]): string | null {
+  if (answersField(r, f)) return null;
+  const label = fields.find((x) => x.name === r.ipcField)?.label ?? r.ipcField;
+  return `${r.testName ?? 'The result'} of report ${r.coaNumber ?? '—'} answers ${label}, not ${f.label}.`;
+}
+
 const FIGURE: Record<string, string> = { mean: 'mean', AV: 'acceptance value', result: 'result' };
 /**
  * An in-process result as the step, the review and the PDF show it (kept with the record as the source's `shown`):
@@ -124,9 +139,12 @@ export const inProcessText = (r: QcResult, request: string, sampled?: { round?: 
  * in-process fields are single results: a list of values, or a mean or acceptance value, is not one result. Its CoA and
  * request are checked by coaRefusal. (Tablets' inProcessFit also fills lists of readings; API has none.)
  */
-export function inProcessFit(r: Pick<QcResult, 'testName' | 'coaNumber' | 'unit' | 'reported' | 'individual' | 'figure'>, f: BlockField, unit: string):
+export function inProcessFit(r: Pick<QcResult, 'testName' | 'coaNumber' | 'unit' | 'reported' | 'individual' | 'figure' | 'ipcField'>, f: BlockField, unit: string, fields: readonly BlockField[] = [f]):
   { error: string } | { take: Record<string, string> } {
   const what = `${r.testName ?? 'The result'} of in-process report ${r.coaNumber ?? '—'}`;
+  // Round 44: a result that names the field it answers fills only that field.
+  const other = fieldRefusal(r, f, fields);
+  if (other) return { error: other };
   if (!sameUnit(r.unit, unit)) return { error: `${what} is in ${r.unit || 'no unit'}, not in ${unit}.` };
   if (r.individual?.length) return { error: `${what} is a list of ${r.individual.length} values: ${f.label} takes one result.` };
   if (r.figure && r.figure !== 'result') return { error: `${what} reports the ${FIGURE[r.figure] ?? r.figure}, not one result: it is not ${f.label}.` };

@@ -6,7 +6,7 @@ type Raw = string | string[];
 type Pick = { lims: string };
 /** An in-process result of this step's lab request (or an earlier round's) in LIMS, as offered for its field. */
 export interface QcPick { resultId: string; coaNumber: string | null; testName: string | null; reported: string | null; unit: string | null; shown: string;
-  individual?: string[] | null; figure?: string | null; requestId?: string | null }
+  individual?: string[] | null; figure?: string | null; requestId?: string | null; ipcField?: string | null }
 /**
  * Tablets round 42: an in-process QC field (qc 'in_process') while LIMS answers: this step's lab request, the results
  * that fit the field (shared/engine/lims.ts inProcessFit) and, in words, why the others do not.
