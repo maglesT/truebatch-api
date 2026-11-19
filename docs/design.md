@@ -103,7 +103,16 @@ answering) or **ok**.
   typed by hand picks its QC report from the lot's approved release or retest CoAs of the line's material. The pick
   keeps the CoA as its source ("QC report COA… (LIMS CoA …)" on the release screen and the PDF); any other number is
   refused with the reason (shared/engine/lims.ts). Link off or down: typed by hand and marked so. API has no step
-  field that is a result of the release CoA, so result_v1 is not read.
+  field that is a result of the release CoA.
+- **LIMS in-process tests** (Tablets rounds 42-43; owner: in-process lab tests are picked, not typed): a field marked
+  `qc: 'in_process'` (react's IPC result when the master sets its unit; the new "QC lab in-process test" block for KF
+  water, residual solvent and the like) makes its step open a lab request when it starts, published as
+  `lab_request_v1` (db/migrations/0020, the same name and columns as Tablets'; id '<batch>/<stage.sub.step.round>').
+  While LIMS answers, the field picks the reported figure of `result_v1` of an approved in-process report of that
+  request, or of an EARLIER round of the same step not picked by another round (a reaction's sample of round 3 decides
+  round 5; the record says "sampled in round 3 at …"); typing is refused. Absent or down: typed by hand and marked so.
+  A request is done once picked (or its result typed by hand), cancelled when the round is not applicable, the step's
+  rounds end without picking it, or the batch is rejected or production approved. Floor checks ("check") stay typed.
 - **Published** (`db/migrations/0006_report_views.sql`): `batch_fact_v1` and `equipment_use_v1` with Batchwright's
   names and columns, so the Logbook and Deviations read TrueBatch as they read Batchwright, and `deviation_note_v1`
   for Deviations to file notes later. `batch_fact_v1` has one more column at its end (`0007`): `manufactured_on`, the

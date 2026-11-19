@@ -1,0 +1,61 @@
+-- Tablets round 42 (owner: in-process lab tests are picked from Medhanta LIMS, not typed): lab_request_v1, one row per
+-- in-process lab request, read by LIMS to receive the sample. A step whose block has in-process QC fields (qc
+-- 'in_process': the reaction's IPC result, a QC lab in-process test) opens its request when it starts: the "started"
+-- event keeps the request's stage and step in words and its tests (server/routes/batches.ts labRequestOf). Nothing new
+-- is stored: the view is derived from the insert-only step and batch events, so batches stay insert-only (0019).
+--   request_id: '<batch number>/<step key>' (stage.sub-batch.step.round: a repeated round or sub-batch has its own);
+--   tests: [{ name, label, unit, individual }]: individual is the number of values a list takes, else null;
+--   status: done once a round of the step picked a result of the request from LIMS (round 43: a later round may use an
+--   earlier round's sample), or its result was typed by hand (LIMS off or down); cancelled when the round is set not
+--   applicable, the step's rounds ended without picking it, or the batch is rejected, terminated or production
+--   approved; open until then.
+-- LIMS reads this view from every TrueBatch edition as its own link: name and columns are the same as TrueBatch
+-- Tablets' (its 0019). Columns are only ever added at the end.
+
+do $$
+declare
+  rep text := case when current_schema() = 'public' then 'report' else current_schema() || '_report' end;
+begin
+  execute format('create schema if not exists %I', rep);
+  execute format('revoke all on schema %I from public', rep);
+  perform set_config('search_path', format('%I, %I', rep, current_schema()), true);
+end $$;
+
+create view lab_request_v1 with (security_barrier) as
+select q.request_id, b.batch_no, v.doc->'header'->>'productCode' as product_code,
+  s.payload->'labRequest'->>'stage' as stage_title, q.step_key, s.payload->'labRequest'->>'step' as step_title,
+  s.payload->'labRequest'->'tests' as tests, s.at as requested_at,
+  case when p.picked_at is not null or h.typed_at is not null then 'done'
+    when t.na_at is not null or t.closed_at is not null or r.at is not null then 'cancelled' else 'open' end as status,
+  now() as read_at, greatest(s.at, p.picked_at, h.typed_at, t.na_at, t.closed_at, r.at) as data_as_of
+from step_events s
+join batches b on b.id = s.batch_id
+join master_versions v on v.id = b.master_version_id
+cross join lateral (select concat_ws('.', s.stage, s.sub, s.step, s.round) as step_key) k
+cross join lateral (select b.batch_no || '/' || k.step_key as request_id, k.step_key) q
+-- This round not applicable; or (round 43) the step's rounds ended (the round that ended them closes the requests no
+-- round picked: its "done" event has labClosed).
+cross join lateral (
+  select min(x.at) filter (where x.kind = 'not_applicable' and x.round = s.round) as na_at,
+    min(x.at) filter (where x.kind = 'done' and x.payload->>'labClosed' = 'true') as closed_at
+  from step_events x where x.batch_id = s.batch_id and x.stage = s.stage and x.sub = s.sub and x.step = s.step
+) t
+-- Done: a round of the step picked a result of this request (round 43: the same or a later round), or this round's
+-- result was typed by hand from the QC report (LIMS off or down).
+left join lateral (
+  select min(x.at) as picked_at from step_events x cross join jsonb_each(coalesce(x.payload->'source', '{}')) e
+  where x.batch_id = s.batch_id and x.stage = s.stage and x.sub = s.sub and x.step = s.step and x.kind in ('value', 'corrected')
+    and jsonb_typeof(e.value) = 'object' and lower(e.value->>'request') = lower(q.request_id)
+) p on true
+left join lateral (
+  select min(x.at) as typed_at from step_events x cross join jsonb_array_elements(s.payload->'labRequest'->'tests') tt
+  where x.batch_id = s.batch_id and x.stage = s.stage and x.sub = s.sub and x.step = s.step and x.round = s.round and x.kind in ('value', 'corrected')
+    and x.payload->'values' ? (tt->>'name') and x.payload->'source'->(tt->>'name')->>'from' = 'hand'
+) h on true
+-- The batch rejected or terminated, or its record approved by production (closed to changes): nothing more is sampled.
+left join lateral (select min(x.at) as at from batch_events x where x.batch_id = s.batch_id and x.kind in ('rejected', 'production_approved')) r on true
+where s.kind = 'started' and jsonb_typeof(s.payload->'labRequest'->'tests') = 'array';
+
+revoke all on lab_request_v1 from public;
+
+reset search_path;

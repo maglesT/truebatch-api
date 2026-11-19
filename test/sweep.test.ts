@@ -33,6 +33,7 @@ const SETTINGS: Record<string, Step['settings']> = {
   'sieve-analysis': { sieve1: '850 µm', sieve2: '425 µm', sieve3: '250 µm', sieve4: '180 µm', sieve5: '150 µm', finesBelow: '150 µm', finesLimit: { high: '20.0', unit: '%' },
     recoveryLimit: pct('98.0', '102.0') },
   check: { what: 'Water by KF', unit: '%', limit: { high: '0.5', unit: '%' } },
+  'lab-test': { what: 'Water by KF', unit: '%', limit: { high: '0.5', unit: '%' } },
   'qa-sample': { sampleLimit: { low: '50', high: '60', unit: 'g' } },
   'stage-yield': { theoretical: { molar: true }, yieldLimit: pct('85.0', '100.5'), accountabilityLimit: pct('99.0', '100.5') },
   'pack-material-issue': { material: { formula: 'x' }, unit: 'units' },
