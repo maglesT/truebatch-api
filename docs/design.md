@@ -113,6 +113,9 @@ answering) or **ok**.
   round 5; the record says "sampled in round 3 at …"); typing is refused. Absent or down: typed by hand and marked so.
   A request is done once picked (or its result typed by hand), cancelled when the round is not applicable, the step's
   rounds end without picking it, or the batch is rejected or production approved. Floor checks ("check") stay typed.
+  A step started before this (its "started" event has no lab request) is never stuck: its in-process fields are typed
+  by hand even while LIMS answers ("BY HAND: started before LIMS in-process requests"), checked by a second person and
+  listed for QA (Tablets round 43).
 - **Published** (`db/migrations/0006_report_views.sql`): `batch_fact_v1` and `equipment_use_v1` with Batchwright's
   names and columns, so the Logbook and Deviations read TrueBatch as they read Batchwright, and `deviation_note_v1`
   for Deviations to file notes later. `batch_fact_v1` has one more column at its end (`0007`): `manufactured_on`, the

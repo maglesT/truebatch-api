@@ -4,7 +4,10 @@ import { links } from '../server/links.js';
 import { findBlock } from '../shared/blocks/index.js';
 import { blockProblems, type Block } from '../shared/blocks/format.js';
 import { coaRefusal, inProcessFit, inProcessText, labTests, requestFits, sameUnit, type Coa, type QcResult } from '../shared/engine/lims.js';
-import { labRequestOf } from '../server/routes/batches.js';
+import { labRequestOf, loadBatch, recordInput } from '../server/routes/batches.js';
+import { batchRecordDoc } from '../server/batch-record.js';
+import { handWhy } from '../shared/engine/links.js';
+import { qcReportText } from '../shared/engine/release.js';
 import { call, freshApp, login, proofFor, seedUser, TEST_DATABASE_URL, type TestApp } from './helpers.js';
 import { api, small } from './engine-fixture.js';
 
@@ -248,5 +251,36 @@ describe('round 43: a step with rounds takes an earlier round\'s sample; each re
     expect(await requests(b.batchNo)).toMatchObject([{ status: 'done' }, { status: 'open' }, { status: 'done' }]);
     expect((await done(b.id, '0.1.0.3')).statusCode).toBe(200);
     expect(await requests(b.batchNo)).toMatchObject([{ status: 'done' }, { request_id: `${b.batchNo}/0.1.0.2`, status: 'cancelled' }, { status: 'done' }]);
+  });
+});
+
+describe('Tablets round 43: a step started before LIMS in-process requests is typed by hand, not stuck', () => {
+  it('in words: "started before LIMS in-process requests"; a link down or absent as before', () => {
+    expect(handWhy({ link: 'lims', state: 'no_request' })).toBe('started before LIMS in-process requests');
+    expect(handWhy({ link: 'lims', state: 'down' })).toBe('LIMS link down');
+    expect(handWhy({ link: 'lims', state: 'down' }, 'link was down')).toBe('LIMS link was down');
+    expect(handWhy({ link: 'mms', state: 'absent' })).toBe('MMS not linked');
+    expect(qcReportText({ reportNo: 'QC-1', source: { from: 'hand', link: 'lims', state: 'absent' } })).toBe('QC report QC-1 (typed by hand: LIMS not linked)');
+  });
+
+  it('TA-14 while LIMS answers: no pick is offered or taken; the result is typed, marked, checked by a second person and listed for QA', async () => {
+    const b = await issue();
+    // Started as a step was before the port: its "started" event has no lab request.
+    await t.owner`insert into step_events (batch_id, stage, sub, step, round, kind, payload, person_id)
+      values (${b.id}, 0, 1, 0, 1, 'started', '{}', (select id from users where username = 'asha'))`;
+    expect(await requests(b.batchNo)).toEqual([]);
+    await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.42');
+    const p = await as('asha', 'GET', `/api/batches/${b.id}/lims?request=0.1.0.1&units=${encodeURIComponent(encodeURIComponent('%'))}`);
+    expect(p.json()).toEqual({ link: 'ok', request: `${b.batchNo}/0.1.0.1`, noRequest: true, coas: [], results: [] });
+    expect(await problems(record(b.id, '0.1.0.1', { result: { lims: 'x' } }))).toEqual(['Result: this step was started before LIMS in-process requests: type it from the QC report.']);
+    expect((await record(b.id, '0.1.0.1', { result: '0.42' })).statusCode).toBe(200);
+    expect((await stepOf(b.id, '0.1.0.1')).source.result).toEqual({ from: 'hand', link: 'lims', state: 'no_request' });
+    const review = (await as('asha', 'GET', `/api/batches/${b.id}/review`)).json() as { hand: { field: string; link: string; state: string }[] };
+    expect(review.hand).toContainEqual(expect.objectContaining({ field: 'result', link: 'lims', state: 'no_request' }));
+    // A value typed by hand needs a second-person check: signing it alone leaves it awaiting the check.
+    expect((await done(b.id, '0.1.0.1')).statusCode).toBe(200);
+    expect(((await as('asha', 'GET', `/api/batches/${b.id}`)).json() as { steps: { id: string; state: string }[] }).steps.find((s) => s.id === '0.1.0.1')!.state).toBe('done_awaiting_check');
+    const l = (await loadBatch(t.sql, b.id))!;
+    expect(JSON.stringify(batchRecordDoc(await recordInput(t.sql, l, t.master), 'ASHA', new Date(), false))).toContain('BY HAND: started before LIMS in-process requests');
   });
 });

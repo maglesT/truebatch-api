@@ -108,7 +108,8 @@ export function StepScreen({ me, d, blocks, row, now, reload }: { me: Me; d: Bat
   const ipUnits = [...new Set(block.fields.filter((f) => f.qc === 'in_process').map((f) => unitOf(f, st)).filter(Boolean))];
   const ipResults = useLims(ipUnits.length ? `/api/batches/${d.batch.id}/lims?request=${encodeURIComponent(row.id)}&units=${ipUnits.map((u) => encodeURIComponent(encodeURIComponent(u))).join(',')}` : null, last);
   const inProcessFor = (f: BlockField): InProcessPicks | undefined => {
-    if (f.qc !== 'in_process' || !ipResults) return undefined;
+    // Tablets round 43: a step started before LIMS in-process requests has none: its in-process fields are typed by hand.
+    if (f.qc !== 'in_process' || !ipResults || ipResults.noRequest) return undefined;
     const offered: QcPick[] = [];
     const refused: string[] = [];
     for (const r of (ipResults.results ?? []).filter((x) => sameUnit(x.unit, unitOf(f, st)))) {
@@ -306,6 +307,7 @@ export function StepScreen({ me, d, blocks, row, now, reload }: { me: Me; d: Bat
           ) : (
             <section className="dash-panel" aria-label="Record">
               <div className="panel-head"><h2>Record</h2>{can('record') && <span className="muted">each value is saved when you leave the field</span>}</div>
+              {ipResults?.noRequest && <p className="notice warn">This step was started before LIMS in-process requests: type the in-process results from the QC report. They are marked typed by hand; a second person checks them.</p>}
               {fields.map(fieldView)}
             </section>
           )}
