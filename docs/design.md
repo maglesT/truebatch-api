@@ -98,6 +98,12 @@ answering) or **ok**.
   tick "I am trained in <skill>", and the signature records `training` from `hand` ("training typed by hand
   (Recruitment not reachable)"), shown on the step, listed in QA's release review and in the PDF (TA-23). A step
   marked not applicable, a QA hold release and the batch-level signatures do not read training.
+- **LIMS** (`coa_v1`, readers round 2, Tablets round 40): QC approval picks this batch's approved release CoA (a
+  MATERIAL sample of the API's master-data item whose lot number is the batch number: the API is a material); a lot
+  typed by hand picks its QC report from the lot's approved release or retest CoAs of the line's material. The pick
+  keeps the CoA as its source ("QC report COA… (LIMS CoA …)" on the release screen and the PDF); any other number is
+  refused with the reason (shared/engine/lims.ts). Link off or down: typed by hand and marked so. API has no step
+  field that is a result of the release CoA, so result_v1 is not read.
 - **Published** (`db/migrations/0006_report_views.sql`): `batch_fact_v1` and `equipment_use_v1` with Batchwright's
   names and columns, so the Logbook and Deviations read TrueBatch as they read Batchwright, and `deviation_note_v1`
   for Deviations to file notes later. `batch_fact_v1` has one more column at its end (`0007`): `manufactured_on`, the

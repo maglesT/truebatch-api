@@ -5,7 +5,7 @@ import { audit } from '../audit.js';
 import { parseId, requirePermission, type SessionUser } from '../auth.js';
 import { usableItem } from '../master.js';
 import { dispensingRooms, machineRefusal, roomRefusal } from '../../shared/engine/picks.js';
-import { handProblem, lineOf, pullItem, pullLot, pulledWords } from '../pull.js';
+import { handProblem, lineOf, pullCoa, pullItem, pullLot, pulledWords, usableCoas } from '../pull.js';
 import { SignError, authenticateSigner, contentHash, sign, signBody } from '../signatures.js';
 import { masterVersion } from './masters.js';
 import { batchRecordDoc, type RecordInput, type Signature } from '../batch-record.js';
@@ -16,7 +16,7 @@ import type { MasterDoc } from '../../shared/master/schema.js';
 import { Dec } from '../../shared/templates/index.js';
 import {
   ACTIONS, BATCH_ACTIONS, CERTIFICATE, retestDate, DEVIATION_DONE, LINK_OF, MATERIAL_USE, batchRefusal, filedKey, inLotUnit, issuedLots, returnProblems, returnsOf, usedQuantity, usesOfLot, stepLabel, stepPlace, stepTitle, handFields, isHand, batchView, doneProblems, evaluate, lateItems, openSteps, parseKey, readValue, refusal, review, timers,
-  trainingCheck, trainingTyped, type Training,
+  trainingCheck, trainingTyped, coaText, type Training,
   type Action, type BatchAction, type BatchEvent, type DeviationStatus, type LinkState, type Source, type StageView, type Stored, type StepEvent, type StepKey, type StepView, type Timer, type Value,
 } from '../../shared/engine/index.js';
 
@@ -173,8 +173,18 @@ async function readValues(app: FastifyInstance, tx: Tx, doc: MasterDoc, key: Ste
     const v = readValue(f, x, typeof setting === 'string' ? setting : '');
     if (typeof v === 'object' && !Array.isArray(v) && 'error' in v) { problems.push(v.error); continue; }
     const no = typeof v !== 'string' ? null : name.includes('.') ? handProblem(f, v, now, PLANT_TZ) : null;
-    if (no) problems.push(no);
-    else out[name] = v as Value;
+    if (no) { problems.push(no); continue; }
+    // The QC report or certificate number of a lot typed by hand: while LIMS answers, an approved CoA of this lot and
+    // material there (picked; kept with its LIMS reference); absent or down, typed, and marked so.
+    if (lot && name === `${lot.name}.report` && typeof v === 'string') {
+      const line = lineOf(doc, step);
+      const c = await pullCoa(app, v, { kind: 'LOT', lot: String(out[lot.name] ?? current.values[lot.name] ?? ''), materialId: line?.materialItemId, materialCode: line?.code });
+      if (c.problems.length) { problems.push(...c.problems); continue; }
+      source[name] = c.source;
+      out[name] = c.values.coaNumber ?? v;
+      continue;
+    }
+    out[name] = v as Value;
   }
   if (problems.length) throw new StepError(400, 'invalid_values', problems);
   return { values: out, source };
@@ -521,6 +531,21 @@ export function batchRoutes(app: FastifyInstance, sql: Sql) {
     return { link: r.state, lots: r.state === 'ok' ? r.value : [] };
   });
 
+  // LIMS (readers round 2): the approved CoAs of this batch (QC approval), or of a lot typed by hand at a step (`key`,
+  // `lot`: its QC report or certificate number), for the pick lists. Only what may be used is offered; the server checks
+  // a pick again when it is recorded.
+  app.get<{ Params: { id: string }; Querystring: { key?: string; lot?: string } }>('/api/batches/:id/lims', anyUser, async (req, reply) => {
+    const id = parseId(req.params.id);
+    const l = id === null ? null : await loadBatch(sql, id);
+    if (!l) return reply.code(404).send({ error: 'not_found' });
+    const key = req.query.key ? parseKey(req.query.key) : null;
+    const st = key ? l.doc.stages[key.stage]?.steps[key.step] : undefined;
+    const line = st ? lineOf(l.doc, st) : undefined;
+    const r = await usableCoas(app, req.query.lot && st ? { kind: 'LOT', lot: req.query.lot, materialId: line?.materialItemId, materialCode: line?.code }
+      : { kind: 'BATCH', batchNo: l.batch.batchNo, itemId: l.doc.header.productItemId, code: l.doc.header.productCode });
+    return { link: r.link, coas: r.coas.map((c) => ({ coaNumber: c.coaNumber, shown: coaText(c) })) };
+  });
+
   // The machines and rooms the Logbook has (their master-data ids), for the pick lists: while the link answers, only
   // these are offered (any other is refused, server/pull.ts); absent or down, every one is offered and typed by hand.
   app.get('/api/logbook/items', anyUser, async () => {
@@ -561,7 +586,12 @@ export function batchRoutes(app: FastifyInstance, sql: Sql) {
           const wrong = returnProblems(issued, b.returns ?? []);
           if (wrong.length) throw new StepError(400, 'invalid_values', wrong);
           const returns = issued.map((x) => ({ ...x, value: b.returns!.find((r) => r.lot.toLowerCase() === x.lot.toLowerCase() && r.unit === x.unit)!.value }));
-          const payload = { ...(action === 'terminate' ? { terminated: true } : {}), ...(returns.length ? { returns } : {}), ...(b.reportNo ? { reportNo: b.reportNo } : {}), ...(b.reason ? { reason: b.reason } : {}), ...(b.note ? { note: b.note } : {}) };
+          // QC approval (readers round 2): while LIMS answers, the report number is an approved CoA of this batch there
+          // (picked, kept with its LIMS reference); absent or down, typed by hand and marked so for QA.
+          const qc = action === 'qc-approve' ? await pullCoa(app, b.reportNo!, { kind: 'BATCH', batchNo: l.batch.batchNo, itemId: l.doc.header.productItemId, code: l.doc.header.productCode }) : null;
+          if (qc?.problems.length) throw new StepError(409, 'not_in_lims', qc.problems);
+          const payload = { ...(action === 'terminate' ? { terminated: true } : {}), ...(returns.length ? { returns } : {}), ...(b.reportNo ? { reportNo: (qc?.values.coaNumber as string | undefined) ?? b.reportNo } : {}),
+            ...(qc ? { source: qc.source } : {}), ...(b.reason ? { reason: b.reason } : {}), ...(b.note ? { note: b.note } : {}) };
           const [ev] = await tx<{ id: number }[]>`
             insert into batch_events (batch_id, kind, payload, person_id) values (${id}, ${rule.event}, ${tx.json(payload)}, ${user.id}) returning id::int`;
           if (signer && rule.meaning) {

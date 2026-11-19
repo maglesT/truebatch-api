@@ -2,6 +2,7 @@ import type postgres from 'postgres';
 import type { Sql } from './db.js';
 import type { LinkState, Provider } from '../shared/engine/links.js';
 import type { TrainingRead } from '../shared/engine/training.js';
+import type { Coa } from '../shared/engine/lims.js';
 
 // Links to the other Medhanta products, the Logbook way (platform PL-08, D-02). Each provider is read live through
 // its report views with TrueBatch's own login, from the URL the platform writes only while the link is on
@@ -164,12 +165,32 @@ export const recruitmentClient = (l: Link) => ({
     order by skill_code, skill_title nulls last limit 500`).map((r) => ({ code: r.code, ...(r.title ? { title: r.title } : {}) }))),
 });
 
+// ---- LIMS: report.coa_v1 (published by Medhanta LIMS, readers round 2). One row per decided sample (decision APPROVED
+// with its CoA number, or REJECTED). lot_number is the lot (MMS) or the batch number (TrueBatch) as the sample names it.
+// Read by lot or batch number, without case; whether a CoA may be used is decided once in the app (shared/engine/lims.ts
+// coaRefusal), so a refusal says why. `rejected`: LIMS has a rejection of the same sample too.
+type CoaRow = { coa_id: string; coa_number: string | null; sample_number: string; lot_number: string | null; item_kind: string | null; item_master_id: string | null;
+  item_code: string | null; item_name: string | null; purpose: string | null; decision: string; decided_at: string | null; decided_by: string | null;
+  spec_number: string | null; spec_version: number | null; rejected: boolean };
+const coaOf = (r: CoaRow): Coa => ({ coaId: r.coa_id, coaNumber: r.coa_number, sampleNumber: r.sample_number, lotNumber: r.lot_number, itemKind: r.item_kind,
+  itemMasterId: r.item_master_id, itemCode: r.item_code, itemName: r.item_name, purpose: r.purpose, decision: r.decision, decidedAt: r.decided_at,
+  decidedBy: r.decided_by, specNumber: r.spec_number, specVersion: r.spec_version, rejected: r.rejected });
+export const limsClient = (l: Link) => ({
+  // The CoAs of a lot or batch number (every decision: the app says why one may not be used).
+  coas: (lotNumber: string) => l.read(async (q, v) => (await q<CoaRow[]>`
+    select c.coa_id::text, c.coa_number, c.sample_number, c.lot_number, c.item_kind, c.item_master_id::text, c.item_code, c.item_name, c.purpose,
+      c.decision, c.decided_at::text, c.decided_by, c.spec_number, c.spec_version::int,
+      exists (select 1 from ${v('coa_v1')} x where x.coa_id = c.coa_id and x.decision <> 'APPROVED') as rejected
+    from ${v('coa_v1')} c where lower(c.lot_number) = lower(${lotNumber.trim()}) order by c.decided_at desc nulls last limit 50`).map(coaOf)),
+});
+
 export interface Links {
   deviations: ReturnType<typeof deviationsClient>;
   qms: ReturnType<typeof qmsClient>;
   logbook: ReturnType<typeof logbookClient>;
   mms: ReturnType<typeof mmsClient>;
   recruitment: ReturnType<typeof recruitmentClient>;
+  lims: ReturnType<typeof limsClient>;
 }
 /** The links, from their connections (null: absent). `schema` lets tests point a provider at its own schema. */
 export function links(c: Partial<Record<Provider, Sql | null>> = {}, schema: Partial<Record<Provider, string>> = {}): Links {
@@ -179,5 +200,6 @@ export function links(c: Partial<Record<Provider, Sql | null>> = {}, schema: Par
     logbook: logbookClient(link('logbook', c.logbook ?? null, schema.logbook)),
     mms: mmsClient(link('mms', c.mms ?? null, schema.mms)),
     recruitment: recruitmentClient(link('recruitment', c.recruitment ?? null, schema.recruitment)),
+    lims: limsClient(link('lims', c.lims ?? null, schema.lims)),
   };
 }
