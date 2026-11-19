@@ -8,7 +8,7 @@ import {
 import { Alerts } from './BatchScreen.js';
 import { deviationText } from '../../../shared/engine/release.js';
 import { FieldInput, type InProcessPicks, type QcPick } from './Fields.js';
-import { answersField, inProcessFit, labRequestId, sameUnit } from '../../../shared/engine/lims.js';
+import { answersField, inProcessFit, ipcCodes, labRequestId, sameUnit } from '../../../shared/engine/lims.js';
 import { DemoSkip } from './DemoSkip.js';
 import { ReasonDialog } from './ReasonDialog.js';
 import { CERTIFICATE, fieldLabel, handEntered, LINK_OF } from '../../../shared/engine/links.js';
@@ -107,14 +107,16 @@ export function StepScreen({ me, d, blocks, row, now, reload }: { me: Me; d: Bat
   // earlier round's (round 43); each field is offered the results that fit it and told why others do not.
   const ipUnits = [...new Set(block.fields.filter((f) => f.qc === 'in_process').map((f) => unitOf(f, st)).filter(Boolean))];
   const ipResults = useLims(ipUnits.length ? `/api/batches/${d.batch.id}/lims?request=${encodeURIComponent(row.id)}&units=${ipUnits.map((u) => encodeURIComponent(encodeURIComponent(u))).join(',')}` : null, last);
+  // Tablets round 45: a result that names its test's code (ipcCode, unique within the master) only to the field of that code.
+  const codes = ipcCodes(doc, row.key.stage, row.key.step, block.fields);
   const inProcessFor = (f: BlockField): InProcessPicks | undefined => {
     // Tablets round 43: a step started before LIMS in-process requests has none: its in-process fields are typed by hand.
     if (f.qc !== 'in_process' || !ipResults || ipResults.noRequest) return undefined;
     const offered: QcPick[] = [];
     const refused: string[] = [];
     // Tablets round 44: a result of another field's test (ipcField) is not this field's: neither offered nor listed as refused.
-    for (const r of (ipResults.results ?? []).filter((x) => sameUnit(x.unit, unitOf(f, st)) && answersField(x, f))) {
-      const fit = inProcessFit(r, f, unitOf(f, st), block.fields);
+    for (const r of (ipResults.results ?? []).filter((x) => sameUnit(x.unit, unitOf(f, st)) && answersField(x, f, codes))) {
+      const fit = inProcessFit(r, f, unitOf(f, st), block.fields, codes);
       if ('error' in fit) refused.push(fit.error); else offered.push(r);
     }
     return { request: ipResults.request ?? labRequestId(d.batch.batchNo, row.id), offered, refused };

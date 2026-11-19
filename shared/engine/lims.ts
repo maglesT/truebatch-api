@@ -13,6 +13,10 @@
  * flag qc 'in_process') opens a lab request when it starts, published as report.lab_request_v1 ('<batch>/<step key>').
  * Its field picks the reported figure of a result of an APPROVED in-process report (purpose in_process, an IPR number) of
  * THAT request: of this batch and API, this step. API's in-process fields are single results (no lists of readings).
+ * Tablets round 45 (agreed with LIMS: its in-process specification is per PRODUCT): each test of a lab request has a code
+ * unique within the master, '<block id>.<field name>', with '@<n>' when the block is in the master more than once (n: its
+ * occurrence in order). A result that names the code it answers (result_v1.ipc_code) fills only the field of that code
+ * (ipcCodes, answersField); one that names none falls back to the round 44 rule (ipc_field, else the unit).
  */
 import type { BlockField } from '../blocks/format.js';
 
@@ -33,6 +37,9 @@ export interface QcResult {
   requestId?: string | null; individual?: string[] | null; figure?: string | null;
   /** Tablets round 44: the TrueBatch field an in-process result answers (result_v1.ipc_field; null from an older LIMS). */
   ipcField?: string | null;
+  /** Tablets round 45: the code of the lab request's test the result answers (lab_request_v1 tests[].code); null from a
+   * LIMS without the column: then the round 44 rule (ipcField, else the unit). */
+  ipcCode?: string | null;
 }
 /** What the CoA must be of: this batch (of the API), or this lot of the step's material. */
 export type CoaFor =
@@ -101,26 +108,48 @@ export function requestFits(candidate: string | null | undefined, want: string):
   const w = requestRound(want);
   return !!c && !!w && c.step === w.step && c.round <= w.round;
 }
-/** A test of a lab request, as lab_request_v1.tests lists it. individual: the number of values (a list), else null. */
-export interface LabTest { name: string; label: string; unit: string; individual: number | null }
 /**
- * The in-process QC fields of a step, as the tests of its lab request (`unitOf`: the field's unit in this step). Round
- * 43: a field whose unit the master did not set is not asked for (a reaction with a TLC or visual end point and no IPC
- * unit opens no request).
+ * A test of a lab request, as lab_request_v1.tests lists it. individual: the number of values (a list), else null.
+ * Round 45: `code`, unique within the master (ipcCodes), what LIMS's in-process specification maps and its result names
+ * (ipc_code). (Tablets' staged list also has `stages`; API has none.)
  */
-export const labTests = (fields: readonly BlockField[], unitOf: (f: BlockField) => string): LabTest[] =>
-  fields.filter((f) => f.qc === 'in_process' && unitOf(f)).map((f) => ({ name: f.name, label: f.label, unit: unitOf(f), individual: f.count ?? null }));
+export interface LabTest { code: string; name: string; label: string; unit: string; individual: number | null }
+/** The steps of a master in order, as ipcCodes reads them (a master document). */
+type MasterSteps = { stages: readonly { steps: readonly { block: { id: string } }[] }[] };
+/**
+ * Tablets round 45: the code of each in-process field of a master's step (by field name), unique within the master so
+ * LIMS's in-process specification (per product) maps each: '<block id>.<field name>' ('react.ipcResult'), with '@<n>'
+ * when the block is in the master more than once (n: its occurrence, stages in order and their steps in order:
+ * 'react.ipcResult@2'). A sub-batch or a round of the step has the same code (its request id tells them apart).
+ */
+export function ipcCodes(doc: MasterSteps, stage: number, step: number, fields: readonly BlockField[]): Record<string, string> {
+  const id = doc.stages[stage]?.steps[step]?.block.id;
+  if (!id) return {};
+  const same = doc.stages.flatMap((s, si) => s.steps.map((t, ti) => ({ id: t.block.id, si, ti }))).filter((x) => x.id === id);
+  const at = same.length > 1 ? `@${same.findIndex((x) => x.si === stage && x.ti === step) + 1}` : '';
+  return Object.fromEntries(fields.filter((f) => f.qc === 'in_process').map((f) => [f.name, `${id}.${f.name}${at}`]));
+}
+/**
+ * The in-process QC fields of a step, as the tests of its lab request (`unitOf`: the field's unit in this step; `codes`:
+ * ipcCodes of the step). Round 43: a field whose unit the master did not set is not asked for (a reaction with a TLC or
+ * visual end point and no IPC unit opens no request).
+ */
+export const labTests = (fields: readonly BlockField[], unitOf: (f: BlockField) => string, codes: Readonly<Record<string, string>>): LabTest[] =>
+  fields.filter((f) => f.qc === 'in_process' && unitOf(f)).map((f) => ({ code: codes[f.name] ?? f.name, name: f.name, label: f.label, unit: unitOf(f), individual: f.count ?? null }));
 
 /**
  * Tablets round 44: whether a result may fill field `f`: a result that names no field (an older LIMS) may fill any field
  * in its unit; one that names a field (result_v1.ipc_field) fills only that field, so in a step with several fields in
  * one unit a result of one test never goes into another. (Tablets also lets a staged list fill either stage; API has none.)
+ * Round 45: a result that names the code of the test it answers (ipcCode) fills only the field of that code in this
+ * step (`codes`: ipcCodes).
  */
-export const answersField = (r: Pick<QcResult, 'ipcField'>, f: BlockField) => !r.ipcField || r.ipcField === f.name;
+export const answersField = (r: Pick<QcResult, 'ipcField' | 'ipcCode'>, f: BlockField, codes: Readonly<Record<string, string>> = {}) =>
+  r.ipcCode ? codes[f.name] === r.ipcCode : !r.ipcField || r.ipcField === f.name;
 /** Why this result may not fill field `f` (it answers another field of `fields`), in plain words; null when it may. */
-export function fieldRefusal(r: Pick<QcResult, 'ipcField' | 'testName' | 'coaNumber'>, f: BlockField, fields: readonly BlockField[]): string | null {
-  if (answersField(r, f)) return null;
-  const label = fields.find((x) => x.name === r.ipcField)?.label ?? r.ipcField;
+export function fieldRefusal(r: Pick<QcResult, 'ipcField' | 'ipcCode' | 'testName' | 'coaNumber'>, f: BlockField, fields: readonly BlockField[], codes: Readonly<Record<string, string>> = {}): string | null {
+  if (answersField(r, f, codes)) return null;
+  const label = r.ipcCode ? fields.find((x) => codes[x.name] === r.ipcCode)?.label ?? `in-process test ${r.ipcCode}` : fields.find((x) => x.name === r.ipcField)?.label ?? r.ipcField;
   return `${r.testName ?? 'The result'} of report ${r.coaNumber ?? '—'} answers ${label}, not ${f.label}.`;
 }
 
@@ -139,11 +168,12 @@ export const inProcessText = (r: QcResult, request: string, sampled?: { round?: 
  * in-process fields are single results: a list of values, or a mean or acceptance value, is not one result. Its CoA and
  * request are checked by coaRefusal. (Tablets' inProcessFit also fills lists of readings; API has none.)
  */
-export function inProcessFit(r: Pick<QcResult, 'testName' | 'coaNumber' | 'unit' | 'reported' | 'individual' | 'figure' | 'ipcField'>, f: BlockField, unit: string, fields: readonly BlockField[] = [f]):
+export function inProcessFit(r: Pick<QcResult, 'testName' | 'coaNumber' | 'unit' | 'reported' | 'individual' | 'figure' | 'ipcField' | 'ipcCode'>, f: BlockField, unit: string, fields: readonly BlockField[] = [f],
+  codes: Readonly<Record<string, string>> = {}):
   { error: string } | { take: Record<string, string> } {
   const what = `${r.testName ?? 'The result'} of in-process report ${r.coaNumber ?? '—'}`;
-  // Round 44: a result that names the field it answers fills only that field.
-  const other = fieldRefusal(r, f, fields);
+  // Round 44: a result that names the field it answers fills only that field (round 45: the code of its test).
+  const other = fieldRefusal(r, f, fields, codes);
   if (other) return { error: other };
   if (!sameUnit(r.unit, unit)) return { error: `${what} is in ${r.unit || 'no unit'}, not in ${unit}.` };
   if (r.individual?.length) return { error: `${what} is a list of ${r.individual.length} values: ${f.label} takes one result.` };

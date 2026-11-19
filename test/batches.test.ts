@@ -88,7 +88,7 @@ describe('master versions', () => {
     expect((await as('author', 'PUT', `/api/master-versions/${id}`, { doc })).statusCode).toBe(200);
     expect(((await as('viewer', 'GET', `/api/master-versions/${id}`)).json() as { doc: typeof doc }).doc.header.batchSize).toBe('50000');
     // The fixture names no rooms for its stages (TA-11): only that is left to fix.
-    expect((await as('viewer', 'GET', `/api/master-versions/${id}/checks`)).json().problems.map((p: { path: string }) => p.path)).toEqual([0, 1, 2, 3].map((i) => `stages[${i}].roomTypes`));
+    expect((await as('viewer', 'GET', `/api/master-versions/${id}/checks`)).json().problems.filter((p: { level: string }) => p.level !== 'info').map((p: { path: string }) => p.path)).toEqual([0, 1, 2, 3].map((i) => `stages[${i}].roomTypes`));
     expect(await t.owner`select 1 from audit_log where action = 'master.updated' and object_id = ${String(id)}`).toHaveLength(1);
     expect((await as('viewer', 'PUT', `/api/master-versions/${id}`, { doc })).statusCode).toBe(403);
   });

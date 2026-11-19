@@ -69,7 +69,9 @@ export interface LimsPicks { link: 'ok' | 'absent' | 'down'; coas: { coaNumber: 
   // Tablets round 42 (?request=): the in-process results of a step's lab request (or an earlier round's), with what
   // `reported` is and the request each was sampled for.
   results?: { resultId: string; coaNumber: string | null; testName: string | null; reported: string | null; unit: string | null; shown: string;
-    individual?: string[] | null; figure?: string | null; requestId?: string | null; ipcField?: string | null }[];
+    individual?: string[] | null; figure?: string | null; requestId?: string | null; ipcField?: string | null;
+    // Tablets round 45: the code of the lab request's test the result answers (unique within the master); null: the round 44 rule.
+    ipcCode?: string | null }[];
   request?: string;
   // Tablets round 43: the step was started before LIMS in-process requests (it has none): its in-process fields are typed.
   noRequest?: boolean }

@@ -3,13 +3,14 @@ import { connect, type Sql } from '../server/db.js';
 import { links } from '../server/links.js';
 import { findBlock } from '../shared/blocks/index.js';
 import { blockProblems, type Block } from '../shared/blocks/format.js';
-import { answersField, coaRefusal, fieldRefusal, inProcessFit, inProcessText, labTests, requestFits, sameUnit, type Coa, type QcResult } from '../shared/engine/lims.js';
+import { answersField, coaRefusal, fieldRefusal, inProcessFit, inProcessText, ipcCodes, labTests, requestFits, sameUnit, type Coa, type QcResult } from '../shared/engine/lims.js';
 import { labRequestOf, loadBatch, recordInput } from '../server/routes/batches.js';
 import { batchRecordDoc } from '../server/batch-record.js';
 import { handWhy } from '../shared/engine/links.js';
 import { qcReportText } from '../shared/engine/release.js';
 import { call, freshApp, login, proofFor, seedUser, TEST_DATABASE_URL, type TestApp } from './helpers.js';
 import { api, small } from './engine-fixture.js';
+import { masterChecks } from '../shared/master/checks.js';
 
 // Tablets round 42 (owner: in-process lab tests are picked from LIMS, not typed) and round 43 (found here: a periodic
 // step's rounds). A step with an in-process QC field opens a lab request when it starts (report.lab_request_v1); its
@@ -77,11 +78,11 @@ describe('the in-process rules (shared/engine/lims.ts)', () => {
     const si = d.stages.findIndex((s) => s.key === 'step1');
     const ti = d.stages[si]!.steps.findIndex((t) => t.key === 'react');
     expect(labRequestOf(d, { stage: si, sub: 1, step: ti, round: 2 })).toEqual({ stage: 'Step 1: condensation', step: expect.stringMatching(/\(round 2\)$/),
-      tests: [{ name: 'ipcResult', label: 'IPC result', unit: '%', individual: null }] });
+      tests: [{ code: 'react.ipcResult@1', name: 'ipcResult', label: 'IPC result', unit: '%', individual: null }] });
     delete d.stages[si]!.steps[ti]!.settings.ipcUnit;
     expect(labRequestOf(d, { stage: si, sub: 1, step: ti, round: 2 })).toBeNull();
     const react = findBlock({ id: 'react', version: 1 })!;
-    expect(labTests(react.fields, () => '')).toEqual([]);
+    expect(labTests(react.fields, () => '', {})).toEqual([]);
   });
 });
 
@@ -102,7 +103,7 @@ beforeAll(async () => {
       create table ${L}.result_v1 (result_id uuid, coa_id uuid, coa_number text, sample_number text, lot_number text, item_master_id text, item_code text,
         test_key text, test_name text, value numeric, unit text, shown text, limit_text text, passed boolean, method_code text, analysis_number text,
         decision text, decided_at timestamptz, read_at timestamptz default now(), data_as_of timestamptz default now(), reported text, outside_lab text,
-        request_id text, individual_values numeric[], figure text, ipc_field text);
+        request_id text, individual_values numeric[], figure text, ipc_field text, ipc_code text);
       grant usage on schema ${L} to truebatch_api_app;
       grant select on all tables in schema ${L} to truebatch_api_app;`);
     provider = connect(TEST_DATABASE_URL, { role: 'truebatch_api_app', link: true });
@@ -151,16 +152,16 @@ type Picks = { link: string; request: string; results: { resultId: string; coaNu
 const picks = async (id: number, key: string) => (await as('asha', 'GET', `/api/batches/${id}/lims?request=${key}&units=${encodeURIComponent(encodeURIComponent('%'))}`)).json() as Picks;
 let n = 0;
 /** An approved in-process report of `request` in LIMS with one result (reported, unit). */
-async function reported(batchNo: string, request: string, figure: string, unit = '%', o: { purpose?: string; decision?: string; ipcField?: string } = {}) {
+async function reported(batchNo: string, request: string, figure: string, unit = '%', o: { purpose?: string; decision?: string; ipcField?: string; ipcCode?: string } = {}) {
   n += 1;
   const number = `IPR26${String(n).padStart(3, '0')}`;
   const id = `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
   const decision = o.decision ?? 'APPROVED';
   await t.owner.unsafe(`insert into ${L}.coa_v1 (coa_id, coa_number, sample_number, lot_number, item_kind, item_master_id, item_code, item_name, purpose, decision, decided_at, decided_by, request_id)
     values ($1, $2, $3, $4, 'MATERIAL', 'p', 'P', 'P', $5, $6, now(), 'QC ONE', $7)`, [id, decision === 'APPROVED' ? number : null, `LS26${n}`, batchNo, o.purpose ?? 'in_process', decision, request]);
-  await t.owner.unsafe(`insert into ${L}.result_v1 (result_id, coa_id, coa_number, lot_number, test_key, test_name, unit, limit_text, analysis_number, decision, decided_at, reported, request_id, figure, ipc_field)
-    values ($1, $2, $3, $4, 'kf', 'Water by KF', $5, 'NMT 0.5', 'LA26001', $6, now(), $7, $8, 'result', $9)`,
-  [`00000000-0000-0000-1111-${String(n).padStart(12, '0')}`, id, decision === 'APPROVED' ? number : null, batchNo, unit, decision, figure, request, o.ipcField ?? null]);
+  await t.owner.unsafe(`insert into ${L}.result_v1 (result_id, coa_id, coa_number, lot_number, test_key, test_name, unit, limit_text, analysis_number, decision, decided_at, reported, request_id, figure, ipc_field, ipc_code)
+    values ($1, $2, $3, $4, 'kf', 'Water by KF', $5, 'NMT 0.5', 'LA26001', $6, now(), $7, $8, 'result', $9, $10)`,
+  [`00000000-0000-0000-1111-${String(n).padStart(12, '0')}`, id, decision === 'APPROVED' ? number : null, batchNo, unit, decision, figure, request, o.ipcField ?? null, o.ipcCode ?? null]);
   return number;
 }
 
@@ -173,7 +174,7 @@ describe('a QC lab in-process test picked from LIMS', () => {
 
   it('TA-14 the step opens its lab request as it starts (lab_request_v1, open), with its test in the step\'s unit', async () => {
     expect(await requests(b.batchNo)).toEqual([{ request_id: `${b.batchNo}/0.1.0.1`, product_code: 'P', step_title: 'QC lab in-process test: Water by KF',
-      tests: [{ name: 'result', label: 'Result', unit: '%', individual: null }], status: 'open' }]);
+      tests: [{ code: 'lab-test.result', name: 'result', label: 'Result', unit: '%', individual: null }], status: 'open' }]);
   });
 
   it('TA-14 while LIMS answers the result is picked (its reported figure, kept with the report and request); typing is refused', async () => {
@@ -306,6 +307,54 @@ describe('Tablets round 44: a result that names the field it answers (result_v1.
     expect(p.results.map((r) => [r.coaNumber, (r as { ipcField?: string }).ipcField])).toEqual([[own, 'result'], [expect.any(String), 'other']]);
     const other = p.results.find((r) => r.coaNumber !== own)!;
     expect(await problems(record(b.id, '0.1.0.1', { result: { lims: other.resultId } }))).toEqual([`Water by KF of report ${other.coaNumber} answers other, not Result.`]);
+    expect((await record(b.id, '0.1.0.1', { result: { lims: p.results.find((r) => r.coaNumber === own)!.resultId } })).statusCode).toBe(200);
+    expect((await stepOf(b.id, '0.1.0.1')).values.result).toEqual({ value: '0.42', unit: '%' });
+  });
+});
+
+describe('Tablets round 45: in-process test codes unique within the product (lab_request_v1 tests[].code, result_v1.ipc_code)', () => {
+  const react = findBlock({ id: 'react', version: 1 })!;
+  const ipc = react.fields.find((f) => f.name === 'ipcResult')!;
+  it('a block used once has <block id>.<field name>; a block in the master more than once gets @<n> by its order', () => {
+    const d = api();
+    expect(ipcCodes(d, 1, 3, react.fields)).toEqual({ ipcResult: 'react.ipcResult@1' });
+    expect(ipcCodes(d, 2, 0, react.fields)).toEqual({ ipcResult: 'react.ipcResult@2' });
+    const one = small([{ steps: [{ block: { id: 'lab-test', version: 1 }, checker: false, settings: {} }] }]);
+    expect(ipcCodes(one, 0, 0, [field])).toEqual({ result: 'lab-test.result' });
+    expect(labTests([field], () => '%', { result: 'lab-test.result' })).toEqual([{ code: 'lab-test.result', name: 'result', label: 'Result', unit: '%', individual: null }]);
+  });
+
+  it('the master check says a repeated in-process block must be mapped in LIMS for each occurrence (info, never blocking)', () => {
+    const d = api();
+    expect(masterChecks(d).filter((p) => p.level === 'info').map((p) => [p.path, p.message])).toEqual([
+      ['stages[1].steps[3]', "Process to an end point is in this master 2 times: this step's in-process test is react.ipcResult@1. LIMS specification must map each occurrence"],
+      ['stages[2].steps[0]', "Process to an end point is in this master 2 times: this step's in-process test is react.ipcResult@2. LIMS specification must map each occurrence"],
+    ]);
+    // A reaction without an IPC unit (TLC or visual end point) opens no request: nothing to map.
+    delete d.stages[2]!.steps[0]!.settings.ipcUnit;
+    expect(masterChecks(d).filter((p) => p.level === 'info').map((p) => p.path)).toEqual(['stages[1].steps[3]']);
+  });
+
+  it('a result naming a code fills only the field of that code (before ipc_field); none named: the round 44 rule', () => {
+    const codes = { ipcResult: 'react.ipcResult@2' };
+    expect(answersField(result({ ipcCode: 'react.ipcResult@2', ipcField: 'ph' }), ipc, codes)).toBe(true);
+    expect(answersField(result({ ipcCode: 'react.ipcResult@1' }), ipc, codes)).toBe(false);
+    expect(answersField(result({ ipcCode: null, ipcField: 'ipcResult' }), ipc, codes)).toBe(true);
+    expect(inProcessFit(result({ ipcCode: 'react.ipcResult@1' }), ipc, '%', react.fields, codes))
+      .toEqual({ error: 'Water by KF of report IPR26001 answers in-process test react.ipcResult@1, not IPC result.' });
+    expect(inProcessFit(result({ ipcCode: 'react.ipcResult@2' }), ipc, '%', react.fields, codes)).toEqual({ take: { ipcResult: '0.42' } });
+  });
+
+  it('TA-14 the lab request lists each test with its code; a result of another code is refused, its own code taken', async () => {
+    const b = await issue();
+    await act(b.id, '0.1.0.1', 'start');
+    expect((await requests(b.batchNo))[0]!.tests).toEqual([{ code: 'lab-test.result', name: 'result', label: 'Result', unit: '%', individual: null }]);
+    await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.10', '%', { ipcCode: 'react.ipcResult@1' });
+    const own = await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.42', '%', { ipcCode: 'lab-test.result', ipcField: 'other' });
+    const p = await picks(b.id, '0.1.0.1');
+    expect(p.results.map((r) => (r as { ipcCode?: string }).ipcCode)).toEqual(['react.ipcResult@1', 'lab-test.result']);
+    const other = p.results.find((r) => r.coaNumber !== own)!;
+    expect(await problems(record(b.id, '0.1.0.1', { result: { lims: other.resultId } }))).toEqual([`Water by KF of report ${other.coaNumber} answers in-process test react.ipcResult@1, not Result.`]);
     expect((await record(b.id, '0.1.0.1', { result: { lims: p.results.find((r) => r.coaNumber === own)!.resultId } })).statusCode).toBe(200);
     expect((await stepOf(b.id, '0.1.0.1')).values.result).toEqual({ value: '0.42', unit: '%' });
   });
