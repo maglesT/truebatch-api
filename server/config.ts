@@ -17,6 +17,8 @@ const schema = z.object({
   MMS_DATABASE_URL: optionalUrl,
   // Recruitment's training_v1: only trained people sign a step that names a training (owner, 17 Nov 2026).
   RECRUITMENT_DATABASE_URL: optionalUrl,
+  // LIMS's coa_v1: QC's CoAs, picked where QC approval or a lot typed by hand asks for its QC report.
+  LIMS_DATABASE_URL: optionalUrl,
   // Sign-on through Medhanta core, written by the platform's apply.
   OIDC_ISSUER: z.string().url(),
   OIDC_CLIENT_ID: z.string().default('truebatch_api'),

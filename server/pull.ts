@@ -4,6 +4,8 @@ import type { Block, BlockField } from '../shared/blocks/index.js';
 import { materialLines, type FormulaLine, type MasterDoc, type Step } from '../shared/master/schema.js';
 import { CERTIFICATE, PROVIDER_NAME, clauses, type Provider, type Source, type Value } from '../shared/engine/index.js';
 import { LOT_USABLE } from './links.js';
+import { coaRefusal, coaText, type Coa, type CoaFor } from '../shared/engine/lims.js';
+import type { LinkState } from '../shared/engine/links.js';
 import { plantDate } from '../shared/plant-time.js';
 
 // What a link gives a step value at write time (owner 15 Nov 2026, TA-11, TA-12): the value as read now, or a
@@ -112,3 +114,28 @@ export function handProblem(f: BlockField, v: string, now: Date, tz: string): st
 }
 
 export const pulledWords = (s: Source) => (s.from === 'hand' ? '' : `comes from ${PROVIDER_NAME[s.from]} and cannot be typed over`);
+
+// ---- LIMS (readers round 2, Tablets round 40): QC's CoA, picked while the link answers (shared/engine/lims.ts).
+
+/** The CoAs LIMS has for this batch or lot number (`all`, one per sample) and those that may be used (approved, of it). */
+export async function usableCoas(app: FastifyInstance, want: CoaFor): Promise<{ link: LinkState; coas: Coa[]; all: Coa[] }> {
+  const r = await app.links.lims.coas(want.kind === 'BATCH' ? want.batchNo : want.lot);
+  if (r.state !== 'ok') return { link: r.state, coas: [], all: [] };
+  const all = [...new Map(r.value.map((c) => [c.coaId, c])).values()];
+  return { link: 'ok', coas: all.filter((c) => !coaRefusal(c, want)), all };
+}
+
+/**
+ * A CoA number (the batch's QC approval, a lot's "QC report or certificate number" typed by hand): while LIMS answers
+ * it must be an approved CoA of this batch or lot there (picked); absent or down, typed by hand.
+ */
+export async function pullCoa(app: FastifyInstance, number: string, want: CoaFor): Promise<Pulled> {
+  const r = await usableCoas(app, want);
+  if (r.link !== 'ok') return hand('lims', r.link);
+  const c = r.coas.find((x) => x.coaNumber?.trim().toLowerCase() === number.trim().toLowerCase());
+  // The CoA number as LIMS writes it.
+  if (c) return { source: { from: 'lims', asOf: c.decidedAt, shown: coaText(c) }, values: { coaNumber: c.coaNumber! }, sources: {}, problems: [] };
+  const other = r.all.find((x) => x.coaNumber?.trim().toLowerCase() === number.trim().toLowerCase());
+  const what = want.kind === 'BATCH' ? `batch ${want.batchNo}` : `lot ${want.lot}`;
+  return refused(other ? coaRefusal(other, want)! : `${number} is not an approved CoA of ${what} in LIMS: pick one${r.coas.length ? '' : ' once QC has approved it there'}.`);
+}
