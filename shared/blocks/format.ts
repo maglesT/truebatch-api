@@ -32,6 +32,11 @@ export const fieldSchema = z.object({
   // with one of the notTypes words is not taken (a QC lab "Analytical balance" is not a dispensing balance).
   types: z.array(z.string().regex(/^[a-z][a-z ]*$/)).optional(),
   notTypes: z.array(z.string().regex(/^[a-z][a-z ]*$/)).optional(),
+  // number: an in-process test done in the QC lab on a sample of THIS step (Tablets round 42; owner: in-process lab tests
+  // are picked from LIMS, not typed). The step publishes a lab request when it starts (report.lab_request_v1); while the
+  // LIMS link answers the field picks the reported figure of a result of an approved in-process report of that request;
+  // absent or down, typed by hand (shared/engine/lims.ts). API's are single results (no lists of readings).
+  qc: z.literal('in_process').optional(),
 }).strict();
 
 export const SETTING_KINDS = ['quantity', 'limit', 'number', 'text', 'material'] as const;
@@ -107,6 +112,7 @@ export function blockProblems(b: Block): string[] {
     if (f.kind === 'number' && !f.unit) p.push(`field ${f.name}: a number needs a unit`);
     if (f.unit?.startsWith('$') ? !settings.has(f.unit.slice(1)) : f.unit !== undefined && !findUnit(f.unit)) p.push(`field ${f.name}: unknown unit ${f.unit}`);
     if (f.kind === 'choice' && !f.options?.length) p.push(`field ${f.name}: a choice needs options`);
+    if (f.qc && (f.kind !== 'number' || f.count !== undefined)) p.push(`field ${f.name}: only a single number is an in-process result from LIMS`);
   }
   for (const s of b.settings) if (s.options && (s.kind !== 'text' || !s.options.length)) p.push(`setting ${s.name}: only a text setting has a list`);
   for (const s of b.settings) if (s.notBatch && s.kind !== 'quantity') p.push(`setting ${s.name}: only a quantity setting is marked not a batch quantity`);

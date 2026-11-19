@@ -2,13 +2,26 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { plainError, rawOf, valueText, type BlockField, type PickItem, type Value } from '../api-floor.js';
 
 type Raw = string | string[];
+// An in-process result picked from LIMS (shared/engine/lims.ts): the result's id, sent in place of a typed number.
+type Pick = { lims: string };
+/** An in-process result of this step's lab request (or an earlier round's) in LIMS, as offered for its field. */
+export interface QcPick { resultId: string; coaNumber: string | null; testName: string | null; reported: string | null; unit: string | null; shown: string;
+  individual?: string[] | null; figure?: string | null; requestId?: string | null }
+/**
+ * Tablets round 42: an in-process QC field (qc 'in_process') while LIMS answers: this step's lab request, the results
+ * that fit the field (shared/engine/lims.ts inProcessFit) and, in words, why the others do not.
+ */
+export interface InProcessPicks { request: string; offered: QcPick[]; refused: string[] }
 
 /**
  * One field as the block describes it. Live (onSave): a typed value is saved when the person leaves the field, a tap
  * on yes/no, a choice or a machine saves at once (TA-04). In a dialog (onChange) it only reports the value.
  */
-export function FieldInput({ f, unit, saved, picks = [], note, options = [], disabled, out, onSave, onChange }: {
+export function FieldInput({ f, unit, saved, picks = [], note, options = [], inProcess, disabled, out, onSave, onChange }: {
   f: BlockField; unit: string; saved?: Value; picks?: PickItem[]; disabled?: boolean;
+  // An in-process QC field (f.qc 'in_process') while LIMS answers (typing is refused then); undefined while LIMS is
+  // absent or down, when it is typed from the QC report.
+  inProcess?: InProcessPicks;
   // A machine or room: why some of master data are not offered (shared/engine/picks.ts: untypedNote, inLogbook), each
   // reason its own line.
   note?: readonly (string | null)[] | string | null;
@@ -16,7 +29,7 @@ export function FieldInput({ f, unit, saved, picks = [], note, options = [], dis
   options?: string[];
   // Readings out of their band (from the results), shown red.
   out?: Set<number>;
-  onSave?: (raw: Raw) => Promise<void>; onChange?: (raw: Raw) => void;
+  onSave?: (raw: Raw | Pick) => Promise<void>; onChange?: (raw: Raw | Pick) => void;
 }) {
   const initial = rawOf(saved);
   const [raw, setRaw] = useState<Raw>(f.count && !Array.isArray(initial) ? Array<string>(f.count).fill('') : initial);
@@ -29,7 +42,7 @@ export function FieldInput({ f, unit, saved, picks = [], note, options = [], dis
   useEffect(() => { setRaw(f.count && !Array.isArray(initial) ? Array<string>(f.count).fill('') : initial); }, [savedKey]);
 
   const set = (v: Raw) => { setRaw(v); setError(''); onChange?.(v); };
-  const save = async (v: Raw) => {
+  const save = async (v: Raw | Pick) => {
     if (!onSave || JSON.stringify(v) === savedKey) return;
     setStatus('saving');
     try { await onSave(v); setStatus('saved'); } catch (e) { setStatus(''); setError(plainError(e)); }
@@ -37,11 +50,29 @@ export function FieldInput({ f, unit, saved, picks = [], note, options = [], dis
   const blurSave = () => typeof raw === 'string' && raw.trim() && void save(raw.trim());
   const enter = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); };
   const tap = (v: string) => { set(v); void save(v); };
+  const pick = (id: string) => { setRaw(id); setError(''); onChange?.({ lims: id }); void save({ lims: id }); };
   const id = `f-${f.name}`;
   const notes = (Array.isArray(note) ? note : [note]).filter((n): n is string => !!n);
 
   let input: ReactNode;
-  if (f.kind === 'number' && f.count) {
+  if (f.qc === 'in_process' && inProcess) {
+    input = <>
+      {saved !== undefined && <div className="recorded"><span>{valueText(saved)}</span></div>}
+      {inProcess.offered.length === 0
+        ? <p className="muted">Waiting for LIMS: request {inProcess.request} (sample not yet approved).</p>
+        : (
+          <div className="picks" role="group" aria-label={f.label}>
+            {inProcess.offered.map((r) => (
+              <button key={r.resultId} type="button" className={raw === r.resultId ? 'on' : ''} aria-pressed={raw === r.resultId} disabled={disabled} onClick={() => pick(r.resultId)} title={r.shown}>
+                <b>{r.reported} {r.unit}</b>
+                <small>{r.testName ?? 'Result'} · report {r.coaNumber}{r.requestId && r.requestId !== inProcess.request ? ` · sample of round ${r.requestId.split('.').at(-1)}` : ''}</small>
+              </button>
+            ))}
+          </div>
+        )}
+      {inProcess.refused.map((n) => <p key={n} className="muted small">{n}</p>)}
+    </>;
+  } else if (f.kind === 'number' && f.count) {
     const list = raw as string[];
     const filled = list.filter((x) => x.trim()).length;
     const submit = (e: FormEvent) => { e.preventDefault(); void save(list.map((x) => x.trim())); };
@@ -104,7 +135,7 @@ export function FieldInput({ f, unit, saved, picks = [], note, options = [], dis
   }
   return (
     <div className="fl-field">
-      <label className="lbl" htmlFor={f.count || ['yes-no', 'choice', 'machine', 'room', 'timer'].includes(f.kind) ? undefined : id}>
+      <label className="lbl" htmlFor={f.count || (f.qc === 'in_process' && inProcess) || ['yes-no', 'choice', 'machine', 'room', 'timer'].includes(f.kind) ? undefined : id}>
         <span>{f.label}{f.optional && <small> (if it applies)</small>}</span>
         {status === 'saving' && <span className="saving">Saving…</span>}
         {status === 'saved' && <span className="saved">✓ Saved</span>}

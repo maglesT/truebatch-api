@@ -5,6 +5,8 @@ import type { Block } from './format.js';
 // (temperature always; pressure and pH when the master sets their limits); an in-process control (IPC) result with its
 // report number in the rounds it is taken. The rounds stop when the IPC is within its limit (TA-14: a round "not
 // complete, continue" is normal processing); for a TLC or visual end point the master makes "End point seen" the stop.
+// Tablets rounds 42-43: the IPC result is a QC lab test picked from LIMS when the master sets its unit (each round opens a
+// lab request; a round may use the sample of an earlier round, as the result often comes back while the rounds go on).
 export const react: Block = {
   id: 'react', version: 1, name: 'Process to an end point', checker: false, stop: 'ipcCheck',
   periodic: { maxMinutes: 480 },
@@ -15,7 +17,7 @@ export const react: Block = {
     { name: 'pressure', label: 'Pressure (bar, gauge or absolute as the master says)', kind: 'number', unit: 'bar', optional: true },
     { name: 'ph', label: 'pH', kind: 'number', unit: 'pH', optional: true },
     { name: 'ipcMethod', label: 'IPC method', kind: 'choice', options: ['HPLC', 'GC', 'TLC', 'pH', 'KF', 'NMR', 'visual', 'other'], optional: true },
-    { name: 'ipcResult', label: 'IPC result', kind: 'number', unit: '$ipcUnit', optional: true },
+    { name: 'ipcResult', label: 'IPC result', kind: 'number', unit: '$ipcUnit', optional: true, qc: 'in_process' },
     { name: 'ipcReport', label: 'IPC report number', kind: 'text', optional: true },
     { name: 'endPointSeen', label: 'End point seen (TLC or visual)', kind: 'yes-no', optional: true },
   ],

@@ -65,7 +65,12 @@ export function useLinked<T>(url: string | null, list: string): T[] {
  * LIMS (readers round 2): the approved CoAs LIMS offers now (GET /api/batches/:id/lims) for this batch, or for a lot
  * typed by hand at a step; null while not read, absent or down (then typed by hand). `again` reads it once more.
  */
-export interface LimsPicks { link: 'ok' | 'absent' | 'down'; coas: { coaNumber: string; shown: string }[] }
+export interface LimsPicks { link: 'ok' | 'absent' | 'down'; coas: { coaNumber: string; shown: string }[];
+  // Tablets round 42 (?request=): the in-process results of a step's lab request (or an earlier round's), with what
+  // `reported` is and the request each was sampled for.
+  results?: { resultId: string; coaNumber: string | null; testName: string | null; reported: string | null; unit: string | null; shown: string;
+    individual?: string[] | null; figure?: string | null; requestId?: string | null }[];
+  request?: string }
 export function useLims(url: string | null, again?: unknown): LimsPicks | null {
   const [r, setR] = useState<{ url: string; picks: LimsPicks } | null>(null);
   useEffect(() => {

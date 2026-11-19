@@ -12,6 +12,7 @@ import { filterKeep, isolate } from './isolate.js';
 import { destruction } from './destruction.js';
 import { dryConstant } from './dry-constant.js';
 import { dry } from './dry.js';
+import { labTest } from './lab-test.js';
 import { lineClearance } from './line-clearance.js';
 import { mix } from './mix.js';
 import { packMaterialIssue } from './pack-material-issue.js';
@@ -30,7 +31,7 @@ export type { Block, BlockField, BlockSetting } from './format.js';
 // then Pack and label.
 export const BLOCKS: readonly Block[] = [
   weigh, charge, chargeLiquid, mix, react, separate, distil, distilDry, filterKeep, column, isolate, dry, dryConstant, sieve, sieveAnalysis,
-  subBatchCombine, check, qaSample, stageYield, lineClearance,
+  subBatchCombine, check, labTest, qaSample, stageYield, lineClearance,
   containerIssue, packMaterialIssue, containerFill, containerFillLast, containerReturn, printedReconciliation, destruction,
 ];
 export function findBlock(ref: { id: string; version: number }): Block | undefined {

@@ -12,7 +12,9 @@ export type LinkState = 'absent' | 'down' | 'ok';
 export const PROVIDER_NAME: Record<Provider, string> = { deviations: 'Deviations', qms: 'QMS', logbook: 'Logbook', mms: 'MMS', recruitment: 'Recruitment', lims: 'LIMS' };
 
 /** Pulled through a link (with what was read, PL-07), or typed by hand while the link was absent or down. */
-export type Source = { from: 'hand'; link: Provider; state: 'absent' | 'down' } | { from: Provider; asOf: string | null; shown: string };
+export type Source = { from: 'hand'; link: Provider; state: 'absent' | 'down' } | { from: Provider; asOf: string | null; shown: string;
+  // A LIMS in-process pick: the result picked and the lab request it belongs to (lab_request_v1 counts it as done).
+  ref?: string; request?: string };
 export const isHand = (s: Source | undefined): s is Extract<Source, { from: 'hand' }> => s?.from === 'hand';
 
 /** The link that gives a field kind's value. */
