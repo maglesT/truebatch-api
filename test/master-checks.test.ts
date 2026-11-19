@@ -63,6 +63,19 @@ describe('master checks', () => {
     expect(ta26((p) => { p.steps = p.steps.filter((t) => t.key !== 'fill'); })).toEqual(['The last stage, Pack and label, fills and labels the containers: it needs the Fill and label a container step (Pack and label)']);
     expect(ta26((p) => { p.steps = p.steps.filter((t) => t.key !== 'rec'); })).toEqual(['The labels Drum label issued in Pack and label have no reconciliation step']);
     expect(ta26((p) => { p.steps = p.steps.filter((t) => t.key !== 'destroy'); })).toEqual(['Pack and label issues labels: batch-coded leftovers need the destruction step']);
+ 
+    // The last container may be part-filled (owner, 19 Nov 2026): after the fill step, same nominal fill, one minimum with a low.
+    const last = (settings: object) => s('last', 'container-fill-last', { nominal: '25.0 kg', ...settings });
+    const withLast = (settings: object, at = 2) => (p: typeof pack) => { p.steps.splice(at, 0, { ...last(settings), flow: { kind: 'qa-hold' } } as never); };
+    expect(ta26(withLast({ minimumFill: { low: '5.0', unit: 'kg' } }))).toEqual([]);
+    expect(ta26(withLast({ minimumPercent: { low: '20', unit: '%' } }))).toEqual([]);
+    expect(ta26(withLast({ minimumPercent: { low: '20', unit: '%' } }, 1))).toEqual(['The part-filled last container comes after the Fill and label a container step']);
+    expect(ta26(withLast({ nominal: '20.0 kg', minimumFill: { low: '5.0', unit: 'kg' } }))).toEqual(['The nominal fill is not the one of the Fill and label a container step: make them the same']);
+    expect(ta26(withLast({}))).toEqual(['Set the minimum fill of the last container in kg or in % of the nominal fill (one of the two)']);
+    expect(ta26(withLast({ minimumFill: { low: '5.0', unit: 'kg' }, minimumPercent: { low: '20', unit: '%' } }))).toEqual(['Set the minimum fill of the last container in kg or in % of the nominal fill (one of the two)']);
+    expect(ta26(withLast({ minimumFill: { high: '26.0', unit: 'kg' } }))).toEqual(['The minimum fill needs a lower limit']);
+    expect(ta26((p) => { withLast({ minimumFill: { low: '5.0', unit: 'kg' } })(p); withLast({ minimumFill: { low: '5.0', unit: 'kg' } })(p); }))
+      .toEqual(['Pack and label has more than one part-filled last container step: keep one']);
   });
 
   it('a draft may be incomplete, but its shape is checked', () => {

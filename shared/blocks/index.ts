@@ -5,6 +5,7 @@ import { chargeLiquid } from './charge-liquid.js';
 import { check } from './check.js';
 import { column } from './column.js';
 import { containerFill } from './container-fill.js';
+import { containerFillLast } from './container-fill-last.js';
 import { containerIssue, containerReturn } from './container-issue.js';
 import { distil, distilDry } from './distil.js';
 import { filterKeep, isolate } from './isolate.js';
@@ -30,7 +31,7 @@ export type { Block, BlockField, BlockSetting } from './format.js';
 export const BLOCKS: readonly Block[] = [
   weigh, charge, chargeLiquid, mix, react, separate, distil, distilDry, filterKeep, column, isolate, dry, dryConstant, sieve, sieveAnalysis,
   subBatchCombine, check, qaSample, stageYield, lineClearance,
-  containerIssue, packMaterialIssue, containerFill, containerReturn, printedReconciliation, destruction,
+  containerIssue, packMaterialIssue, containerFill, containerFillLast, containerReturn, printedReconciliation, destruction,
 ];
 export function findBlock(ref: { id: string; version: number }): Block | undefined {
   return BLOCKS.find((b) => b.id === ref.id && b.version === ref.version);
