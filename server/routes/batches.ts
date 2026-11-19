@@ -16,7 +16,7 @@ import type { MasterDoc } from '../../shared/master/schema.js';
 import { Dec } from '../../shared/templates/index.js';
 import {
   ACTIONS, BATCH_ACTIONS, CERTIFICATE, retestDate, DEVIATION_DONE, LINK_OF, MATERIAL_USE, batchRefusal, filedKey, inLotUnit, issuedLots, returnProblems, returnsOf, usedQuantity, usesOfLot, stepLabel, stepPlace, stepTitle, handFields, isHand, batchView, doneProblems, evaluate, lateItems, openSteps, parseKey, readValue, refusal, review, timers,
-  trainingCheck, trainingTyped, coaText, currentValues, endsTheRounds, inProcessText, keyId, labRequestId, labTests, requestRound, type Training,
+  trainingCheck, trainingTyped, coaText, isPick, currentValues, endsTheRounds, inProcessText, keyId, labRequestId, labTests, requestRound, type Training,
   type Action, type BatchAction, type BatchEvent, type DeviationStatus, type LinkState, type Source, type StageView, type Stored, type StepEvent, type StepKey, type StepView, type Timer, type Value,
 } from '../../shared/engine/index.js';
 
@@ -151,6 +151,14 @@ function otherRounds(doc: MasterDoc, events: readonly StepEvent[], key: StepKey,
   return { taken, sampled };
 }
 
+/**
+ * Tablets round 43 (found by the Injectables edition): a step started before LIMS in-process requests opened no lab
+ * request (its "started" event has no labRequest), so LIMS never samples it and a pick could never come: its in-process
+ * fields are typed by hand (marked "started before LIMS in-process requests", checked by a second person and listed for
+ * QA, as when LIMS is down). A step not started yet is not one.
+ */
+const noLabRequest = (v: StepView) => { const s = v.events.find((e) => e.kind === 'started'); return !!s && !s.payload.labRequest; };
+
 async function readValues(app: FastifyInstance, tx: Tx, doc: MasterDoc, key: StepKey, raw: Record<string, unknown>, now: Date, current: StepView, batchNo: string, events: readonly StepEvent[] = []) {
   const stage = doc.stages[key.stage]!;
   const step = stage.steps[key.step]!;
@@ -200,7 +208,11 @@ async function readValues(app: FastifyInstance, tx: Tx, doc: MasterDoc, key: Ste
     // An in-process result (Tablets round 42): picked from an approved in-process report of this step's lab request in
     // LIMS, or of an earlier round's (round 43); a new pick replaces an earlier one, as a correction. Absent or down:
     // typed by hand below, with a second-person check.
-    if (f.qc === 'in_process' && typeof setting === 'string' && setting) {
+    if (f.qc === 'in_process' && noLabRequest(current)) {
+      // Started before LIMS in-process requests: typed by hand below (a pick is refused: there is no request to pick from).
+      if (isPick(x)) { problems.push(`${f.label}: this step was started before LIMS in-process requests: type it from the QC report.`); continue; }
+      source[name] = { from: 'hand', link: 'lims', state: 'no_request' };
+    } else if (f.qc === 'in_process' && typeof setting === 'string' && setting) {
       const o = otherRounds(doc, events, key, batchNo, name);
       const q = await pullInProcess(app, f, x, setting, { batchNo, itemId: doc.header.productItemId, code: doc.header.productCode, request: labRequestId(batchNo, keyId(key)) }, o.taken, o.sampled);
       if (q.problems.length) { problems.push(...q.problems); continue; }
@@ -594,6 +606,9 @@ export function batchRoutes(app: FastifyInstance, sql: Sql) {
       const k = parseKey(req.query.request);
       if (!k || !l.doc.stages[k.stage]?.steps[k.step]) return reply.code(404).send({ error: 'not_found' });
       const request = labRequestId(l.batch.batchNo, keyId(k));
+      // Tablets round 43: a step started before LIMS in-process requests has none: its in-process fields are typed.
+      const sv = openSteps(l.doc, l.events, l.now).steps.find((s) => s.id === keyId(k));
+      if (sv && noLabRequest(sv)) return { link: 'ok', request, noRequest: true, coas: [], results: [] };
       const units = (req.query.units ?? '').split(',').filter(Boolean).map((u) => { try { return decodeURIComponent(u); } catch { return u; } });
       const block = findBlock(l.doc.stages[k.stage]!.steps[k.step]!.block);
       const fields = block?.fields.filter((f) => f.qc === 'in_process') ?? [];

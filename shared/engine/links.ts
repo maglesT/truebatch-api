@@ -11,11 +11,18 @@ export type Provider = (typeof PROVIDERS)[number];
 export type LinkState = 'absent' | 'down' | 'ok';
 export const PROVIDER_NAME: Record<Provider, string> = { deviations: 'Deviations', qms: 'QMS', logbook: 'Logbook', mms: 'MMS', recruitment: 'Recruitment', lims: 'LIMS' };
 
-/** Pulled through a link (with what was read, PL-07), or typed by hand while the link was absent or down. */
-export type Source = { from: 'hand'; link: Provider; state: 'absent' | 'down' } | { from: Provider; asOf: string | null; shown: string;
+/**
+ * Pulled through a link (with what was read, PL-07), or typed by hand while the link was absent or down. Tablets round
+ * 43: or typed by hand because the step has no LIMS lab request of its own (state 'no_request': an in-process field of a
+ * step started before LIMS in-process requests, when steps opened no request); it is checked and listed as a link down.
+ */
+export type Source = { from: 'hand'; link: Provider; state: 'absent' | 'down' | 'no_request' } | { from: Provider; asOf: string | null; shown: string;
   // A LIMS in-process pick: the result picked and the lab request it belongs to (lab_request_v1 counts it as done).
   ref?: string; request?: string };
 export const isHand = (s: Source | undefined): s is Extract<Source, { from: 'hand' }> => s?.from === 'hand';
+/** Why a value was typed by hand, in words: "LIMS link down", "LIMS not linked", "started before LIMS in-process requests". */
+export const handWhy = (s: Pick<Extract<Source, { from: 'hand' }>, 'link' | 'state'>, down = 'link down') =>
+  s.state === 'no_request' ? 'started before LIMS in-process requests' : `${PROVIDER_NAME[s.link]} ${s.state === 'down' ? down : 'not linked'}`;
 
 /** The link that gives a field kind's value. */
 export const LINK_OF: Partial<Record<BlockField['kind'], Provider>> = { lot: 'mms', machine: 'logbook', room: 'logbook' };

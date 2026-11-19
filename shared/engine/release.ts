@@ -8,7 +8,7 @@ import type { MasterDoc } from '../master/schema.js';
 import { openSteps, outOfLimits, stepLabel, timers, type StepView, type Timer } from './batch.js';
 import { keyId, parseKey, type State, type StepEvent } from './state.js';
 import { failed } from './values.js';
-import { isHand, PROVIDER_NAME, type LinkState, type Source } from './links.js';
+import { handWhy, isHand, PROVIDER_NAME, type LinkState, type Source } from './links.js';
 import type { Returned } from './stock.js';
 import { trainingTyped } from './training.js';
 
@@ -38,7 +38,7 @@ export const BATCH_ACTIONS: Record<BatchAction, { event: BatchEventKind; permiss
 export function qcReportText(p: { reportNo?: string; source?: Source }): string {
   if (!p.reportNo) return '';
   const s = p.source;
-  return `QC report ${p.reportNo}${!s ? '' : isHand(s) ? ` (typed by hand: ${PROVIDER_NAME[s.link]} ${s.state === 'down' ? 'link down' : 'not linked'})` : ` (${s.shown})`}`;
+  return `QC report ${p.reportNo}${!s ? '' : isHand(s) ? ` (typed by hand: ${handWhy(s)})` : ` (${s.shown})`}`;
 }
 
 export function terminatedText<T extends string | Date>(t: { personName: string; at: T; payload: { reason?: string; returns?: Returned[] } }, clock: (at: T) => string): string {

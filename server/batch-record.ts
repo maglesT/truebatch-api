@@ -4,7 +4,7 @@
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces.js';
 import { findBlock, type Block } from '../shared/blocks/index.js';
 import { materialLines, type Step } from '../shared/master/schema.js';
-import { formulaText, retestDate, batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, trainingOf, trainingText, trainingTyped, skillText, qcReportText, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
+import { formulaText, retestDate, batchView, deviations, deviationNumber, deviationText, fieldLabel, handFields, lateItems, lineQuantity, notYetText, cutShort, terminatedText, TERMINATED_STATE, openSteps, PROVIDER_NAME, deviationStatusWords, stepTitle, unitName, headline, limitOf, withoutVerdict, statusWords, CERTIFICATE, handWhy, trainingOf, trainingText, trainingTyped, skillText, qcReportText, type DeviationStatus, type EventKind, type Source, type Stored, type StepView, type Value } from '../shared/engine/index.js';
 import type { LoadedBatch } from './routes/batches.js';
 import { pageFrame, plant, runs } from './pdf.js';
 import { PLANT_TZ, plantDate, plantText } from '../shared/plant-time.js';
@@ -205,8 +205,9 @@ function valueLines(block: Block, v: StepView, who: (id: number | null) => strin
 }
 
 // Where a value came from: pulled through a link (as read), or typed by hand while the link was off or down.
+// Round 43: a step started before LIMS in-process requests says so ("BY HAND: started before LIMS in-process requests").
 // A LIMS pick says so first (Tablets round 42: "from LIMS in-process report IPR…", the report, its request and round).
-const sourceText = (s: Source | undefined) => (!s ? '' : s.from === 'hand' ? ` (BY HAND: ${PROVIDER_NAME[s.link]} ${s.state === 'down' ? 'link down' : 'not linked'})`
+const sourceText = (s: Source | undefined) => (!s ? '' : s.from === 'hand' ? ` (BY HAND: ${handWhy(s)})`
   : ` (${s.from === 'lims' ? 'from ' : ''}${plantText(s.shown, true)})`);
 
 // A certificate value from MMS: its basis and report, without the value said again ("· as is, MMS report QC/RM/26/1171").
