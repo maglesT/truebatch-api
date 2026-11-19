@@ -26,6 +26,7 @@ const SETTINGS: Record<string, Step['settings']> = {
   'container-issue': { material: { formula: 'x' }, expected: '10 units', enoughLimit: { low: '100', high: '120', unit: '%' } },
   'container-return': { material: { formula: 'x' } },
   'container-fill': { nominal: '25.0 kg', tolerance: '0.5' },
+  'container-fill-last': { nominal: '25.0 kg', minimumFill: { low: '5.0', unit: 'kg' }, minimumPercent: { low: '20', unit: '%' } },
   dry: { lodLimit: { high: '2.0', unit: '%' } },
   'dry-constant': { maxChange: '0.5 g' },
   'sub-batch-combine': { accountabilityLimit: pct('99.0', '100.5') },

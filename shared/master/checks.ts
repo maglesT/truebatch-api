@@ -135,7 +135,7 @@ export function masterChecks(doc: MasterDoc): Problem[] {
  */
 function packChecks(doc: MasterDoc, error: (path: string, message: string, rule?: string) => void): void {
   const last = doc.stages.at(-1);
-  const PACK = ['container-issue', 'pack-material-issue', 'container-fill'];
+  const PACK = ['container-issue', 'pack-material-issue', 'container-fill', 'container-fill-last'];
   if (!last || !doc.stages.some((s) => s.steps.some((t) => PACK.includes(t.block.id)))) return;
   const at = doc.stages.length - 1;
   const of = (id: string) => last.steps.filter((t) => t.block.id === id);
@@ -145,6 +145,22 @@ function packChecks(doc: MasterDoc, error: (path: string, message: string, rule?
     const m = material(issue);
     if (m && !of('printed-reconciliation').some((r) => material(r) === m)) error(`stages[${at}]`, `The labels ${doc.formula.find((l) => l.key === m)?.name ?? m} issued in ${last.name} have no reconciliation step`, 'TA-26');
   }
+  // The last container may be part-filled (owner, 19 Nov 2026): one such step, after the Fill and label step, with the
+  // same nominal fill and exactly one minimum (kg or % of the nominal fill) that has a lower limit.
+  const steps = last.steps.map((t) => t.block.id);
+  of('container-fill-last').forEach((t, n) => {
+    const p = `stages[${at}].steps[${last.steps.indexOf(t)}]`;
+    if (n > 0) error(p, `${last.name} has more than one part-filled last container step: keep one`, 'TA-26');
+    const fill = of('container-fill')[0];
+    if (!fill || steps.indexOf('container-fill') > last.steps.indexOf(t)) error(p, 'The part-filled last container comes after the Fill and label a container step', 'TA-26');
+    else if (JSON.stringify(fill.settings.nominal) !== JSON.stringify(t.settings.nominal)) error(`${p}.settings.nominal`, 'The nominal fill is not the one of the Fill and label a container step: make them the same', 'TA-26');
+    const mins = (['minimumFill', 'minimumPercent'] as const).filter((m) => t.settings[m] !== undefined);
+    if (mins.length !== 1) error(`${p}.settings`, 'Set the minimum fill of the last container in kg or in % of the nominal fill (one of the two)', 'TA-26');
+    for (const m of mins) {
+      const v = t.settings[m];
+      if (!(typeof v === 'object' && 'low' in v && v.low)) error(`${p}.settings.${m}`, 'The minimum fill needs a lower limit', 'TA-26');
+    }
+  });
   if (of('pack-material-issue').length && !of('destruction').length) error(`stages[${at}]`, `${last.name} issues labels: batch-coded leftovers need the destruction step`, 'TA-26');
 }
 

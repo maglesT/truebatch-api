@@ -37,6 +37,7 @@ const NEW: [string, Record<string, unknown>, object?][] = [
   ['container-issue', { material: { formula: 'x' }, expected: '4 units' }],
   ['pack-material-issue', { material: { formula: 'x' }, unit: 'units' }],
   ['container-fill', { nominal: '25.0 kg', tolerance: '0.5' }, { flow: { kind: 'repeat-until', maxRounds: 50 } }],
+  ['container-fill-last', { nominal: '25.0 kg', minimumPercent: { low: '20', unit: '%' } }, { flow: { kind: 'qa-hold' } }],
   ['container-return', { material: { formula: 'x' } }],
   ['printed-reconciliation', { material: { formula: 'x' }, unit: 'units', issued: '100 units' }],
   ['destruction', {}],
@@ -124,5 +125,25 @@ describe('the engine runs the new blocks like any other', () => {
     expect(materialUses(doc, openSteps(doc, e1, at(10_000)).steps).map((u) => u.quantity)).toEqual([{ value: '5', unit: 'units' }]);
     const e2 = walk(doc, e1, '0.1.1.1', { returned: { value: '1', unit: 'units' } });
     expect(materialUses(doc, openSteps(doc, e2, at(10_000)).steps).map((u) => u.quantity)).toEqual([{ value: '4', unit: 'units' }]);
+  });
+});
+
+describe('the part-filled last container (owner, 19 Nov 2026)', () => {
+  const net = (doc: MasterDoc, gross: string) => evaluate(doc, [], { stage: 0, sub: 1, step: 0, round: 1 }, { tare: { value: '2.00', unit: 'kg' }, gross: { value: gross, unit: 'kg' }, labelChecked: 'yes' });
+  it('is checked against its minimum in kg, not the nominal fill: 11.60 kg passes a 5.0 kg minimum, 4.00 kg fails it', () => {
+    const doc = using('container-fill-last', { nominal: '25.0 kg', minimumFill: { low: '5.0', unit: 'kg' } }, { flow: { kind: 'qa-hold' } });
+    expect(net(doc, '13.60').netCheck).toMatchObject({ ok: true, check: { pass: true } });
+    expect(net(doc, '6.00').netCheck).toMatchObject({ ok: true, check: { pass: false } });
+    expect(net(doc, '13.60').fillPercent).toMatchObject({ ok: true, value: '46.4', unit: '%' });
+    expect(net(doc, '13.60').fillPercent).not.toHaveProperty('check');
+  });
+  it('or in % of the nominal fill: 46.4 % passes a 20 % minimum, 16 % fails it; the kg check is left out', () => {
+    const doc = using('container-fill-last', { nominal: '25.0 kg', minimumPercent: { low: '20', unit: '%' } }, { flow: { kind: 'qa-hold' } });
+    expect(net(doc, '13.60').fillPercent).toMatchObject({ check: { pass: true } });
+    expect(net(doc, '6.00').fillPercent).toMatchObject({ check: { pass: false } });
+    expect(net(doc, '13.60').netCheck).toBeUndefined();
+  });
+  it('starts as a QA hold, so QA checks the container and releases it on the step', () => {
+    expect(findBlock({ id: 'container-fill-last', version: 1 })!.qaHold).toBe(true);
   });
 });
