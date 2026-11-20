@@ -20,5 +20,7 @@ export const USERS: Record<string, Permission[]> = {
   // The master designer journey: an author and a second-person checker (qa1 approves).
   author1: ['truebatch_api.master.author'],
   mcheck1: ['truebatch_api.master.check'],
+  // Decides a deviation note without a number: close it here or send it to Deviations (owner decision 20 Nov 2026).
+  exc1: ['truebatch_api.exception.decide'],
   norole: [],
 };

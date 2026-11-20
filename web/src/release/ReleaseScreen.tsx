@@ -3,10 +3,11 @@ import { api, can, MEANING_LABEL, type Me } from '../api.js';
 import { SignDialog } from '../components/SignDialog.js';
 import {
   blockOf, changed, go, headline, pdfLink, plainClock, plainError, statusText, stepOf, tone, useBlocks, useLims, valueText, words,
-  type BatchDetail, type Block, type FloorEvent, type Source, type TimerRow, type Value,
+  type BatchDetail, type Block, type ExceptionRow, type FloorEvent, type Source, type TimerRow, type Value,
 } from '../api-floor.js';
 import { fieldLabel as labelOf, handWhy, PROVIDER_NAME } from '../../../shared/engine/links.js';
 import { stepLabel } from '../../../shared/engine/batch.js';
+import { Exceptions } from '../components/Exceptions.js';
 import { deviationNumber, deviationStatusWords, qcReportText } from '../../../shared/engine/release.js';
 import { plantText } from '../../../shared/plant-time.js';
 import { skillText } from '../../../shared/engine/training.js';
@@ -33,6 +34,7 @@ interface Review {
   // Owner 17 Nov 2026: signatures whose training was ticked by the signer because Recruitment was not reachable.
   trainingTyped: { step: string; event: number; kind: string; code: string; title?: string; state: 'absent' | 'down'; personName: string | null; at: string }[];
   deviationsLink: string;
+  exceptions: ExceptionRow[];
   notApplicable: FloorEvent[];
   // Demo installations only: the waits ended at once (server/demo.ts).
   demoSkips: FloorEvent[];
@@ -83,7 +85,9 @@ export function ReleaseScreen({ me, id }: { me: Me; id: number }) {
   const openDevs = r.deviations.filter((x) => x.open);
   const qcTurn = d.batch.status === 'production approved';
   const qaTurn = d.batch.status === 'QC approved';
-  const blockers = [...openDevs.map((x) => `Deviation ${x.reference} (${name(x.step)}) is ${x.status ? `still open in the Deviations system (${deviationStatusWords(x.status)}): it is closed there first.` : 'open: close it first.'}`), ...d.batch.yieldOut.map(plain)];
+  const blockers = [...openDevs.map((x) => `Deviation ${x.reference} (${name(x.step)}) is ${x.status ? `still open in the Deviations system (${deviationStatusWords(x.status)}): it is closed there first.` : 'open: close it first.'}`),
+    ...d.batch.exceptions.filter((x) => x.decision !== 'closed').map((x) => `Deviation note “${x.text}” (${x.where ?? name(x.step)}) ${x.decision === 'open' ? 'waits for a decision: close it here or send it to Deviations.' : 'was sent to Deviations and is not filed there yet.'}`),
+    ...d.batch.yieldOut.map(plain)];
   const handLabel = (step: string, field: string) => field === 'reference' ? 'deviation number' : fieldLabel(step, field);
 
   const sign = async ({ proof }: { proof: string }) => {
@@ -141,6 +145,9 @@ export function ReleaseScreen({ me, id }: { me: Me; id: number }) {
           <li key={x.note} className={x.open ? 'bad' : 'ok'}><b>{deviationNumber(x)} · {name(x.step)}</b><span>{x.text}</span>
             <small>{x.status ? `${deviationStatusWords(x.status)} in the Deviations system${x.closedAt ? `, ${plainClock(x.closedAt)}` : ''}` : x.open ? 'Open: QA closes it before release' : `Closed by ${x.closed?.personName}, ${plainClock(x.closed?.at ?? '')}: ${x.closed?.payload.reason ?? ''}`}</small>
             {x.open && !x.status && !decided && can(me, 'qa.release') && <button onClick={() => setClosing(x)}>Close the deviation…</button>}</li>))}</Group>
+        <h3>Deviation notes without a number</h3>
+        <Exceptions me={me} batchId={id} batchNo={d.batch.batchNo} exceptions={d.batch.exceptions} contentHash={d.batch.contentHash} deviationsLink={d.batch.deviationsLink}
+          ended={decided} stepName={name} onDone={async (t) => { setNotice(t); await reload(); }} />
         {r.unlinked.length > 0 && <Group title="Deviations naming this batch that no note links" empty="">{r.unlinked.map((x) => (
           <li key={x.number} className="bad"><b>{x.number}</b><span>{x.title}</span><small>{deviationStatusWords(x.status)} in the Deviations system</small></li>))}</Group>}
         <Group title="Typed by hand (a link was off or down)" empty="Every linked value came through its link.">{r.hand.map((h, i) => (
@@ -162,7 +169,7 @@ export function ReleaseScreen({ me, id }: { me: Me; id: number }) {
         <div className="panel-head"><h2>{qcTurn ? 'QC approval' : 'QA release'}</h2>
           <a className="button" href={pdfLink(id)} download>Batch record (PDF)</a></div>
         {notice && <p className="notice info" role="status">{notice}</p>}
-        {r.batchEvents.filter((b) => b.kind !== 'deviation_closed').map((b) => (
+        {r.batchEvents.filter((b) => !['deviation_closed', 'exception_closed', 'exception_sent'].includes(b.kind)).map((b) => (
           <p key={b.id} className={b.kind === 'rejected' ? 'notice bad' : 'all-good'}><span aria-hidden="true">{b.kind === 'rejected' ? '✕' : '✓'}</span>
             {b.payload.terminated ? terminatedText(b, plainClock) : <>{MEANING_LABEL[b.kind] ?? b.kind} by {b.personName}, {plainClock(b.at)}{b.payload.reportNo ? ` · ${plantText(qcReportText(b.payload))}` : ''}{b.payload.reason ? ` · ${b.payload.reason}` : ''}</>}</p>))}
         {qcTurn && (can(me, 'qc.approve') ? (
