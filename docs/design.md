@@ -133,6 +133,18 @@ answering) or **ok**.
   info line (ℹ️, never blocking) on each such step that opens a request: "LIMS specification must map each occurrence".
   A result naming its code (result_v1.ipc_code) fills only the field of that code; without it the round 44 rule holds.
   The view is replaced in place (db/migrations/0021, same name and columns); a request opened before has code null.
+- **Readings for CPV** (Tablets round 46, `db/migrations/0024`): `reading_v1`, one row per recorded number of a step
+  signed done, as the record holds it now (a correction replaces it, `corrected` says so): `reading_id` ('<batch
+  number>/<stage.sub-batch.step.round>/<field>/<reading_no>'), `batch_number`, `product_code`, `stage` (name), `step`
+  (keys, as `material_use_v1`), `step_name`, `sub_batch`, `round`, `block`, `parameter` (the field's label; a "check a
+  value" or "QC lab in-process test" step: what it checks), `field`, `reading_no` (a list of readings: one row each, in
+  order), `value` (numeric), `unit`, `low_limit`, `high_limit` (numeric), `limit_unit` (may differ from `unit`: the
+  reader converts), `limit_of` ('each': a C1 on the value; 'mean': a T7 on the list, the limit is the mean's),
+  `recorded_at`, `corrected`, `read_at`, `data_as_of`. The limits are the master step's written limit setting the block
+  checks the field against, or a fixed limit the block writes; none for an earlier step's result. Every number field
+  of the blocks an API master may use feeds it (`shared/engine/readings.ts`; the list is kept in the database as
+  `reading_parameters`, not published; a test compares the two, so a new number field needs a migration). Read by
+  Operations (CPV).
 - **Published** (`db/migrations/0006_report_views.sql`): `batch_fact_v1` and `equipment_use_v1` with Batchwright's
   names and columns, so the Logbook and Deviations read TrueBatch as they read Batchwright, and `deviation_note_v1`
   for Deviations to file notes later. `batch_fact_v1` has one more column at its end (`0007`): `manufactured_on`, the
