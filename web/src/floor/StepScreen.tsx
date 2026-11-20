@@ -36,7 +36,7 @@ function settingsText(doc: BatchDetail['master']['doc'], block: Block, st: Step,
     const v = st.settings[s.name];
     const m = v && typeof v === 'object' && 'formula' in v ? materialLines(doc).find((l) => l.key === v.formula) : undefined;
     const what = m && `${m.code} · ${m.name}`;
-    if (m && s.kind === 'quantity' && 'mgPerTablet' in m && typeof v === 'object' && 'formula' in v) {
+    if (m && s.kind === 'quantity' && typeof v === 'object' && 'formula' in v) {
       // Worked out by the server once a value is recorded; before that, the batch quantity (an adjusted one needs the lot).
       const r = row.results[s.name] ?? (v.adjusted ? undefined : lineQuantity(doc, [], row.key, m, false, {}));
       return [[s.label, r?.ok ? `${endOf(r)} of ${what}` : `${what}: worked out with the lot's certificate values`]];
@@ -268,7 +268,7 @@ export function StepScreen({ me, d, blocks, row, now, reload }: { me: Me; d: Bat
   return (
     <>
       <div className="step-title">
-        <span className="where">{block.gmp === 'yield' ? `${stage.name} · stage yield` : stage.name}{stage.kind === 'sub-batch' ? ` · sub-batch ${row.key.sub}` : ''}{repeatUntil ? ` · round ${row.key.round}` : ''}</span>
+        <span className="where">{block.id === 'stage-yield' ? `${stage.name} · stage yield` : stage.name}{stage.kind === 'sub-batch' ? ` · sub-batch ${row.key.sub}` : ''}{repeatUntil ? ` · round ${row.key.round}` : ''}</span>
         <h1>{title}</h1>
         <span className={`chip ${row.needsResign ? 'chip-warn' : stateLabel(row.state, d.batch.terminated)[1]}`}>{row.needsResign ? 'Sign again' : stateLabel(row.state, d.batch.terminated)[0]}</span>
         {st.critical && <span className="chip chip-bad">Critical step</span>}
@@ -471,7 +471,7 @@ function InputChanged({ e, d, blocks }: { e: FloorEvent; d: BatchDetail; blocks:
   const src = stepOf(doc, e);
   const b = blockOf(blocks, src);
   const what = `“${stepTitle(doc, blocks, src)}”`;
-  const fields = Object.keys(e.payload.values ?? {}).map((k) => fieldLabel(b?.fields ?? [], k)).join(', ');
+  const fields = shownKeys(e.payload).map((k) => fieldLabel(b?.fields ?? [], k)).join(', ');
   return (
     <div className="fl-alert warn">
       <span className="tag">Input changed</span>
@@ -496,10 +496,18 @@ function StageSummary({ d, blocks, row }: { d: BatchDetail; blocks: Block[]; row
   );
 }
 
+// The fields an event recorded, as its line names them: a value pulled with its field (a lot's expiry from MMS,
+// 'lot.expiry') is part of that field, not a question of its own (its label is the hand-entry question's). Typed by
+// hand (the link down), it is one of the questions and is named.
+const shownKeys = (p: FloorEvent['payload']) => Object.keys(p.values ?? {}).filter((k) => {
+  const src = p.source?.[k];
+  return !(k.includes('.') && k.split('.')[0]! in (p.values ?? {}) && src && src.from !== 'hand');
+});
+
 function History_({ h, block, deviations }: { h: History | null; block: Block; deviations: Deviation[] }) {
   if (!h) return <section className="dash-panel"><div className="skel skel-line w30" /><div className="skel skel-line w60" /></section>;
   const trained = (e: FloorEvent) => { const t = trainingOf(e); return t ? ` · ${trainingText(t)}` : ''; };
-  const fields = (e: FloorEvent) => Object.keys(e.payload.values ?? {}).map((k) => fieldLabel(block.fields, k)).join(', ');
+  const fields = (e: FloorEvent) => shownKeys(e.payload).map((k) => fieldLabel(block.fields, k)).join(', ');
   const what = (e: FloorEvent) => ({
     started: 'Started', value: `Recorded ${fields(e)}`, done: `Signed: performed${trained(e)}`, checked: `Signed: verified (second person)${trained(e)}`, sent_back: `Sent back: “${e.payload.reason}”`,
     corrected: `Corrected ${fields(e)}: “${e.payload.reason}”`, not_applicable: `Not applicable: “${e.payload.reason}”`, late: 'Ran over its time (recorded by the server)',
