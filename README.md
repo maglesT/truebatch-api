@@ -23,7 +23,9 @@ listed for QA. TrueBatch publishes `report.batch_fact_v1` (with `manufactured_on
 name and master version, 0008), `equipment_use_v1`, `deviation_note_v1` (`db/migrations/0006_report_views.sql`) and
 `material_use_v1`, the quantities dispensed, which MMS reads to reduce lot stock (0008), in the material's master-data
 unit; a machine or room is in use by its batch until the last stage of the batch that names it (or may run in its room) closes, a balance is never in use by a batch, and both views name the step in words
-(`step_name`, 0010 and 0011).
+(`step_name`, 0010 and 0011). `reading_v1` (0024, Tablets round 46) gives every recorded number of a step signed
+done (process parameters and in-process checks, one row per reading) with the master's limits, for Operations'
+continued process verification (`docs/design.md` "Readings for CPV").
 
 ## Develop
 Needs Node 22 and PostgreSQL 17.

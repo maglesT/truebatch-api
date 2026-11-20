@@ -56,12 +56,23 @@ answering) or **ok**.
 - **Absent or down: by hand.** The value is typed from the label or certificate, the step needs a second-person check,
   the value is stored with source `hand` (and whether the link was absent or down), and QA's review lists it.
 - **Deviations** (`deviation_v1`): a note's reference must exist; while the link answers its status is Deviations'
-  (closed or rejected there counts as closed) and QA cannot close it by hand. By hand: a QA person other than the one
+  (closed, rejected or cancelled there counts as closed; *cancelled* is Deviations' "Cancelled by QA: not a
+  deviation", shown as "cancelled: not a deviation", owner 20 Nov 2026) and QA cannot close it by hand. By hand: a QA person other than the one
   who typed the number closes it. The number flows back (owner, 17 November 2026): a note written without a number
   that Deviations filed a deviation from (`deviation_v1.source_ref` = the note's `deviation_note_v1.source_ref`) is
   that deviation, read live while the link answers: its number and status are shown on the step, the batch screen,
   QA's review and the PDF, and it blocks release until closed there. A number typed while the link was off says
   "typed by hand".
+- **A note without a number is decided here** (owner decision 20 Nov 2026; replaces Deviations filing every such note
+  on its own). A deviation note written without a number is an *exception* of the batch record. A person holding
+  `truebatch_api.exception.decide` (granted per employee in the platform's permission register, no role gives it)
+  chooses once: **Close here**, with a reason and an e-signature (meaning *Exception closed here*; batch event
+  `exception_closed`), or **Send to Deviations** (batch event `exception_sent`, no signature; offered only while the
+  Deviations link is not absent). `deviation_note_v1` has two new last columns (0023): `decision` (`open`, `closed`,
+  `sent`; null for a note written with a number) and `sent_at`; the Deviations system files only notes with
+  `sent_at`, keyed by `source_ref` as before, and the number then flows back as above. QA's release and rejection wait
+  until every such note is closed here or sent and filed in Deviations; closed-here notes show with who, when and why
+  on the step, the batch screen, QA's review and the PDF. Production approval does not wait for the decision.
 - **QMS** (`change_v1`, planned): the change control at approval must exist and be QA-approved, in a step of
   `CHANGE_STEPS`, and its products must name the master's product (code or name, without case); one that names no
   product is taken with a warning to QA. By hand: another person makes the version effective.
@@ -123,6 +134,18 @@ answering) or **ok**.
   info line (ℹ️, never blocking) on each such step that opens a request: "LIMS specification must map each occurrence".
   A result naming its code (result_v1.ipc_code) fills only the field of that code; without it the round 44 rule holds.
   The view is replaced in place (db/migrations/0021, same name and columns); a request opened before has code null.
+- **Readings for CPV** (Tablets round 46, `db/migrations/0024`): `reading_v1`, one row per recorded number of a step
+  signed done, as the record holds it now (a correction replaces it, `corrected` says so): `reading_id` ('<batch
+  number>/<stage.sub-batch.step.round>/<field>/<reading_no>'), `batch_number`, `product_code`, `stage` (name), `step`
+  (keys, as `material_use_v1`), `step_name`, `sub_batch`, `round`, `block`, `parameter` (the field's label; a "check a
+  value" or "QC lab in-process test" step: what it checks), `field`, `reading_no` (a list of readings: one row each, in
+  order), `value` (numeric), `unit`, `low_limit`, `high_limit` (numeric), `limit_unit` (may differ from `unit`: the
+  reader converts), `limit_of` ('each': a C1 on the value; 'mean': a T7 on the list, the limit is the mean's),
+  `recorded_at`, `corrected`, `read_at`, `data_as_of`. The limits are the master step's written limit setting the block
+  checks the field against, or a fixed limit the block writes; none for an earlier step's result. Every number field
+  of the blocks an API master may use feeds it (`shared/engine/readings.ts`; the list is kept in the database as
+  `reading_parameters`, not published; a test compares the two, so a new number field needs a migration). Read by
+  Operations (CPV).
 - **Published** (`db/migrations/0006_report_views.sql`): `batch_fact_v1` and `equipment_use_v1` with Batchwright's
   names and columns, so the Logbook and Deviations read TrueBatch as they read Batchwright, and `deviation_note_v1`
   for Deviations to file notes later. `batch_fact_v1` has one more column at its end (`0007`): `manufactured_on`, the
