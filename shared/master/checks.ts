@@ -105,6 +105,11 @@ export function masterChecks(doc: MasterDoc): Problem[] {
         const lim = st.settings[bs.name] as Limit | undefined;
         if (both && lim) warn(`${p}.settings.${bs.name}`, `${bs.label} is written in ${lim.unit} but ${both.label} is recorded in ${both.reading}: write the limits in ${both.reading} (${limitWords(both.limit)}), or record in ${lim.unit}`);
       }
+      // A2 (fix round 21 Nov 2026): a lab test 2 or 3 is set in full (what, unit, limits) or not at all.
+      if (block.id === 'lab-tests') for (const n of [2, 3]) {
+        const set = ['what', 'unit', 'limit'].filter((x) => st.settings[`${x}${n}`] !== undefined);
+        if (set.length && set.length < 3) error(`${p}.settings.${['what', 'unit', 'limit'].find((x) => !set.includes(x))}${n}`, `Lab test ${n}: set what is tested, its unit and its limits, or none of them`);
+      }
       // A calculation that needs no recorded value is worked out now (e.g. a liquid make-up, T17): a refusal must be fixed.
       const now = evaluate(doc, [], { stage: si, sub: 1, step: ti, round: 1 }, {});
       for (const c of block.calcs) { const r = now[c.name]; if (r && !r.ok) error(p, `${c.label}: ${r.message}`); }

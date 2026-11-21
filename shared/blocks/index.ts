@@ -13,6 +13,7 @@ import { destruction } from './destruction.js';
 import { dryConstant } from './dry-constant.js';
 import { dry } from './dry.js';
 import { labTest } from './lab-test.js';
+import { labTests } from './lab-tests.js';
 import { lineClearance } from './line-clearance.js';
 import { mix } from './mix.js';
 import { packMaterialIssue } from './pack-material-issue.js';
@@ -27,11 +28,12 @@ import { subBatchCombine } from './sub-batch-combine.js';
 import { weigh } from './weigh.js';
 
 export type { Block, BlockField, BlockSetting } from './format.js';
+export { labelled } from './format.js';
 // In the order of a process: dispensing and charging, processing, isolation and drying, milling, checks and yield,
 // then Pack and label.
 export const BLOCKS: readonly Block[] = [
   weigh, charge, chargeLiquid, mix, react, separate, distil, distilDry, filterKeep, column, isolate, dry, dryConstant, sieve, sieveAnalysis,
-  subBatchCombine, check, labTest, qaSample, stageYield, lineClearance,
+  subBatchCombine, check, labTest, labTests, qaSample, stageYield, lineClearance,
   containerIssue, packMaterialIssue, containerFill, containerFillLast, containerReturn, printedReconciliation, destruction,
 ];
 export function findBlock(ref: { id: string; version: number }): Block | undefined {

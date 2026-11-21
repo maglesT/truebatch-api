@@ -34,6 +34,7 @@ const SETTINGS: Record<string, Step['settings']> = {
     recoveryLimit: pct('98.0', '102.0') },
   check: { what: 'Water by KF', unit: '%', limit: { high: '0.5', unit: '%' } },
   'lab-test': { what: 'Water by KF', unit: '%', limit: { high: '0.5', unit: '%' } },
+  'lab-tests': { what1: 'Assay of the intermediate', unit1: '%', limit1: pct('98.0', '102.0'), what2: 'Water by KF', unit2: '%', limit2: { high: '0.5', unit: '%' }, what3: 'Ethanol', unit3: 'ppm', limit3: { high: '5000', unit: 'ppm' } },
   'qa-sample': { sampleLimit: { low: '50', high: '60', unit: 'g' } },
   'stage-yield': { theoretical: { molar: true }, yieldLimit: pct('85.0', '100.5'), accountabilityLimit: pct('99.0', '100.5') },
   'pack-material-issue': { material: { formula: 'x' }, unit: 'units' },

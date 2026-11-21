@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { connect, type Sql } from '../server/db.js';
 import { links } from '../server/links.js';
-import { findBlock } from '../shared/blocks/index.js';
-import { blockProblems, type Block } from '../shared/blocks/format.js';
+import { findBlock, labelled } from '../shared/blocks/index.js';
+import { blockProblems, type Block, type BlockField } from '../shared/blocks/format.js';
 import { answersField, coaRefusal, fieldRefusal, inProcessFit, inProcessText, ipcCodes, labTests, requestFits, sameUnit, type Coa, type QcResult } from '../shared/engine/lims.js';
 import { labRequestOf, loadBatch, recordInput } from '../server/routes/batches.js';
 import { batchRecordDoc } from '../server/batch-record.js';
@@ -357,5 +357,28 @@ describe('Tablets round 45: in-process test codes unique within the product (lab
     expect(await problems(record(b.id, '0.1.0.1', { result: { lims: other.resultId } }))).toEqual([`Water by KF of report ${other.coaNumber} answers in-process test react.ipcResult@1, not Result.`]);
     expect((await record(b.id, '0.1.0.1', { result: { lims: p.results.find((r) => r.coaNumber === own)!.resultId } })).statusCode).toBe(200);
     expect((await stepOf(b.id, '0.1.0.1')).values.result).toEqual({ value: '0.42', unit: '%' });
+  });
+});
+
+describe('A2 more than one in-process lab test in one step (fix round 21 Nov 2026)', () => {
+  const b = findBlock({ id: 'lab-tests', version: 1 })!;
+  it('each test set by the master is one test of the lab request, named as the master names it; an unset one is left out', () => {
+    const settings = { what1: 'Assay of the intermediate', unit1: '%', what2: 'Water by KF', unit2: '%' };
+    const fields = labelled(b.fields, settings);
+    const codes = ipcCodes({ stages: [{ steps: [{ block: { id: 'lab-tests' } }] }] }, 0, 0, b.fields);
+    const unitOf = (f: BlockField) => { const u = f.unit?.startsWith('$') ? (settings as Record<string, string>)[f.unit.slice(1)] : f.unit; return u ?? ''; };
+    expect(labTests(fields, unitOf, codes)).toEqual([
+      { code: 'lab-tests.test1', name: 'test1', label: 'Assay of the intermediate', unit: '%', individual: null },
+      { code: 'lab-tests.test2', name: 'test2', label: 'Water by KF', unit: '%', individual: null },
+    ]);
+    expect(blockProblems(b)).toEqual([]);
+    // A result naming test 2's code fills test 2 only.
+    const r = { testName: 'Water', coaNumber: 'IPR1', unit: '%', reported: '0.31', individual: null, figure: 'result', ipcField: null, ipcCode: 'lab-tests.test2' };
+    expect(inProcessFit(r, b.fields[1]!, '%', b.fields, codes)).toEqual({ take: { test2: '0.31' } });
+    expect(inProcessFit(r, b.fields[0]!, '%', b.fields, codes)).toMatchObject({ error: expect.stringContaining('answers Lab test 2, not Lab test 1') });
+  });
+  it('a lab test 2 or 3 is set in full or not at all (master check)', () => {
+    const d = small([{ steps: [{ block: { id: 'lab-tests', version: 1 }, checker: true, settings: { what1: 'Assay', unit1: '%', limit1: { low: '98.0', high: '102.0', unit: '%' }, what2: 'Water by KF' } }] }]);
+    expect(masterChecks(d).filter((p) => p.level === 'error').map((p) => p.message)).toContain('Lab test 2: set what is tested, its unit and its limits, or none of them');
   });
 });
