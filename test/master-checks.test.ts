@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BLOCKS } from '../shared/blocks/index.js';
+import { BLOCKS, findBlock } from '../shared/blocks/index.js';
 import { blockProblems, type Block } from '../shared/blocks/format.js';
 import { evaluate } from '../shared/engine/index.js';
+import { limitInReadingUnit } from '../shared/engine/values.js';
 import { blocking, masterChecks } from '../shared/master/checks.js';
 import { masterSchema, type MasterDoc } from '../shared/master/schema.js';
 import { placed, api, unplaced } from './engine-fixture.js';
@@ -259,4 +260,20 @@ it('calculation check ⚠️ the messages say what to answer, in plain words', (
   expect(checks(d).map((p) => `${p.path}: ${p.message}`)).toEqual([
     'formula[0].adjust.salt: The salt factor 1.10 written for Examplol acid differs by 4.0 % from the molecular weights of base and sodium (factor 1.0574), which the batch quantity uses. Confirm with a reason, or correct the factor or the molecular weights.',
   ]);
+});
+
+it('A11 a check limit in kPa with the reading recorded in mbar: the master warns, the floor sees the limit in mbar too, the check converts', () => {
+  const d = api();
+  const st = step(d, 'drying', 'qa-hold');
+  const block = findBlock(st.block)!;
+  expect(limitInReadingUnit(block, st, 'limit')).toBeNull();
+  st.settings = { what: 'Vacuum', unit: 'mbar', limit: { low: '60', high: '80', unit: 'kPa' } };
+  expect(limitInReadingUnit(block, st, 'limit')).toEqual({ reading: 'mbar', label: 'Reading', limit: { low: '600', high: '800', unit: 'mbar' } });
+  expect(checks(d).filter((p) => p.path.endsWith('.limit')).map((p) => [p.level, p.message]))
+    .toEqual([['warning', 'Limits is written in kPa but Reading is recorded in mbar: write the limits in mbar (600 to 800 mbar), or record in kPa']]);
+  const s = d.stages.findIndex((x) => x.key === 'drying');
+  const key = { stage: s, sub: 1, step: d.stages[s]!.steps.indexOf(st), round: 1 };
+  const check = (v: string) => evaluate(d, [], key, { reading: { value: v, unit: 'mbar' } }).readingCheck;
+  expect(check('700')).toMatchObject({ check: { pass: true } });
+  expect(check('70')).toMatchObject({ check: { pass: false } });
 });

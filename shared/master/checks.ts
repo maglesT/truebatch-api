@@ -6,7 +6,7 @@
  */
 import { findBlock, type Block } from '../blocks/index.js';
 import { Dec, c1WithinLimits, findUnit, t11SaltFactor } from '../templates/index.js';
-import { evaluate, keyInput, lineQuantity, molarTheoretical } from '../engine/values.js';
+import { evaluate, keyInput, limitInReadingUnit, lineQuantity, molarTheoretical } from '../engine/values.js';
 import { materialLines, type Answer, type Limit, type MasterDoc, type SettingValue } from './schema.js';
 import { lineKind, lineUnit, UNIT_STEPS, neededKind, unitKindProblem, what as kindWords } from './kinds.js';
 import { isBalance } from '../engine/picks.js';
@@ -96,6 +96,14 @@ export function masterChecks(doc: MasterDoc): Problem[] {
         const lim = c.template === 'C1' && typeof a.limit === 'string' ? block.settings.find((x) => x.name === a.limit!.toString().slice(1) && x.optional) : undefined;
         const f = typeof a.value === 'string' ? block.fields.find((x) => x.name === (a.value as string).slice(1)) : undefined;
         if (lim && f && findUnit(f.unit ?? '')?.kind === 'temperature' && st.settings[lim.name] === undefined) warn(`${p}.settings.${lim.name}`, `${f.label} is recorded but not checked: set the ${lim.label.toLowerCase()}`);
+      }
+      // A11 (fix round 21 Nov 2026): a reading recorded in the step's unit checked against a limit written in another
+      // unit of the same kind (a vacuum in mbar against a limit in kPa): the floor shows the limit in both, but one unit
+      // is clearer. A warning: a version made before this still issues.
+      for (const bs of block.settings.filter((x) => x.kind === 'limit')) {
+        const both = limitInReadingUnit(block, st, bs.name);
+        const lim = st.settings[bs.name] as Limit | undefined;
+        if (both && lim) warn(`${p}.settings.${bs.name}`, `${bs.label} is written in ${lim.unit} but ${both.label} is recorded in ${both.reading}: write the limits in ${both.reading} (${limitWords(both.limit)}), or record in ${lim.unit}`);
       }
       // A calculation that needs no recorded value is worked out now (e.g. a liquid make-up, T17): a refusal must be fixed.
       const now = evaluate(doc, [], { stage: si, sub: 1, step: ti, round: 1 }, {});
@@ -218,6 +226,8 @@ const quantityOf = (text: string | undefined) => { const m = QUANTITY.exec(text 
 const CLASS1 = /\b(benzene|carbon tetrachloride|1,2-dichloroethane|1,1-dichloroethene|1,1,1-trichloroethane)\b/i;
 const WET = /\b(wet|cake|damp|solvent-wet)\b/i;
 const SIZE = /\b(d\s?\(?0?\.?[159]0?\)?|d10|d50|d90|dv\d+|particle size|surface area|polymorph|crystal form)\b/i;
+
+const limitWords = (l: Limit) => (l.low && l.high ? `${l.low} to ${l.high} ${l.unit}` : l.high ? `not more than ${l.high} ${l.unit}` : `at least ${l.low} ${l.unit}`);
 
 function calculationChecks(doc: MasterDoc, out: Problem[]): void {
   const ask = (path: string, key: string, message: string, options: string[], needsReason = false) => {
