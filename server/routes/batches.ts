@@ -274,6 +274,8 @@ const BATCH_BODIES: Record<BatchAction, z.ZodTypeAny> = {
   reject: signBody.extend({ reason }),
   // Per lot the batch used: how much went back to stores unused (stock.ts issuedLots, returnProblems).
   terminate: signBody.extend({ reason, returns: z.array(z.object({ lot: z.string().max(60), value: z.string().trim().regex(/^\d+(\.\d+)?$/, 'a quantity, 0 or more'), unit: z.string().max(20) })).max(200).optional() }),
+  // Fix round 21 Nov 2026 (A5): production abandons a batch before any step is recorded (nothing was used).
+  abandon: signBody.extend({ reason }),
   'close-deviation': z.object({ note: z.number().int().positive(), reason }),
   // Owner decision 20 Nov 2026: a note without a number, closed here (reason, e-signature) or sent to Deviations.
   'close-exception': signBody.extend({ note: z.number().int().positive(), reason }),
@@ -678,7 +680,7 @@ export function batchRoutes(app: FastifyInstance, sql: Sql) {
           // (picked, kept with its LIMS reference); absent or down, typed by hand and marked so for QA.
           const qc = action === 'qc-approve' ? await pullCoa(app, b.reportNo!, { kind: 'BATCH', batchNo: l.batch.batchNo, itemId: l.doc.header.productItemId, code: l.doc.header.productCode }) : null;
           if (qc?.problems.length) throw new StepError(409, 'not_in_lims', qc.problems);
-          const payload = { ...(action === 'terminate' ? { terminated: true } : {}), ...(returns.length ? { returns } : {}), ...(b.reportNo ? { reportNo: (qc?.values.coaNumber as string | undefined) ?? b.reportNo } : {}),
+          const payload = { ...(action === 'terminate' || action === 'abandon' ? { terminated: true } : {}), ...(action === 'abandon' ? { abandoned: true } : {}), ...(returns.length ? { returns } : {}), ...(b.reportNo ? { reportNo: (qc?.values.coaNumber as string | undefined) ?? b.reportNo } : {}),
             ...(qc ? { source: qc.source } : {}), ...(b.reason ? { reason: b.reason } : {}), ...(b.note ? { note: b.note } : {}) };
           const [ev] = await tx<{ id: number }[]>`
             insert into batch_events (batch_id, kind, payload, person_id) values (${id}, ${rule.event}, ${tx.json(payload)}, ${user.id}) returning id::int`;

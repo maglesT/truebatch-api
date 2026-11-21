@@ -17,19 +17,23 @@ export type BatchEventKind = (typeof BATCH_EVENT_KINDS)[number];
 // A batch QA terminated (stopped, not finished) is a rejection with `terminated` (owner, 16 Nov 2026): the record is kept.
 // `returns`: what went back to stores unused of each lot the batch used (stock.ts returnsOf).
 // `source`: where QC approval's report number came from: an approved CoA of the batch in LIMS, or typed by hand (LIMS off or down).
-export interface BatchEvent { id: number; kind: BatchEventKind; payload: { reportNo?: string; note?: number; reason?: string; terminated?: boolean; returns?: Returned[]; source?: Source }; person: number; at: Date }
+// `abandoned` (fix round 21 Nov 2026, A5): terminated by production before any step was recorded (it never started).
+export interface BatchEvent { id: number; kind: BatchEventKind; payload: { reportNo?: string; note?: number; reason?: string; terminated?: boolean; abandoned?: boolean; returns?: Returned[]; source?: Source }; person: number; at: Date }
 
 export const BATCH_STATUSES = ['in production', 'manufacturing complete', 'production approved', 'QC approved', 'released', 'rejected'] as const;
 export type BatchStatus = (typeof BATCH_STATUSES)[number];
 
-export type BatchAction = 'production-approve' | 'qc-approve' | 'release' | 'reject' | 'terminate' | 'close-deviation' | 'close-exception' | 'send-exception';
-export const BATCH_ACTIONS: Record<BatchAction, { event: BatchEventKind; permission: Permission; from?: BatchStatus; meaning?: 'production_approved' | 'qc_approved' | 'released' | 'rejected' | 'exception_closed' }> = {
+export type BatchAction = 'production-approve' | 'qc-approve' | 'release' | 'reject' | 'terminate' | 'abandon' | 'close-deviation' | 'close-exception' | 'send-exception';
+export const BATCH_ACTIONS: Record<BatchAction, { event: BatchEventKind; permission: Permission; from?: BatchStatus; meaning?: 'production_approved' | 'qc_approved' | 'released' | 'rejected' | 'exception_closed' | 'abandoned' }> = {
   'production-approve': { event: 'production_approved', permission: 'truebatch_api.batch.supervise', from: 'manufacturing complete', meaning: 'production_approved' },
   'qc-approve': { event: 'qc_approved', permission: 'truebatch_api.qc.approve', from: 'production approved', meaning: 'qc_approved' },
   release: { event: 'released', permission: 'truebatch_api.qa.release', from: 'QC approved', meaning: 'released' },
   reject: { event: 'rejected', permission: 'truebatch_api.qa.release', from: 'QC approved', meaning: 'rejected' },
   // QA stops a batch still in production that cannot be finished, with a reason (TA-21 rows in test/release.test.ts).
   terminate: { event: 'rejected', permission: 'truebatch_api.qa.release', meaning: 'rejected' },
+  // Fix round 21 Nov 2026 (A5): production abandons a batch issued by mistake, before any step is recorded (a reason
+  // and a signature meaning "abandoned"; the batch is terminated, its record kept). Once a step is recorded, QA terminates.
+  abandon: { event: 'rejected', permission: 'truebatch_api.batch.issue', meaning: 'abandoned' },
   'close-deviation': { event: 'deviation_closed', permission: 'truebatch_api.qa.release' },
   // Owner decision 20 Nov 2026: a note without a deviation number is closed here (reason, e-signature) or sent to
   // Deviations, once, by a person holding the permission (granted per employee in the platform's register).
@@ -49,9 +53,9 @@ export function qcReportText(p: { reportNo?: string; source?: Source }): string 
   return `QC report ${p.reportNo}${!s ? '' : isHand(s) ? ` (typed by hand: ${handWhy(s)})` : ` (${s.shown})`}`;
 }
 
-export function terminatedText<T extends string | Date>(t: { personName: string; at: T; payload: { reason?: string; returns?: Returned[] } }, clock: (at: T) => string): string {
+export function terminatedText<T extends string | Date>(t: { personName: string; at: T; payload: { reason?: string; returns?: Returned[]; abandoned?: boolean } }, clock: (at: T) => string): string {
   const back = t.payload.returns ?? [];
-  return `Terminated by ${t.personName} at ${clock(t.at)}: ${t.payload.reason ?? ''}${back.length
+  return `${t.payload.abandoned ? 'Abandoned before any step was recorded' : 'Terminated'} by ${t.personName} at ${clock(t.at)}: ${t.payload.reason ?? ''}${back.length
     ? ` · Back to stores unused: ${back.map((r) => `lot ${r.lot}${r.material ? ` (${r.material})` : ''} ${r.value} ${r.unit}`).join(', ')}; the rest counts as used` : ''}`;
 }
 
@@ -131,7 +135,8 @@ const STATE_WORDS: Record<State, string> = { waiting: 'is not started', open: 'i
 const isYield = (doc: MasterDoc, v: StepView) => findBlock(doc.stages[v.key.stage]!.steps[v.key.step]!.block)?.gmp === 'yield';
 
 // QC approves before QA releases, for a packing record too (owner, 15 Nov 2026: "QC signs first").
-export interface BatchView { status: BatchStatus; open: string[]; late: string[]; deviations: Deviation[]; exceptions: Exception[]; yieldOut: string[] }
+// recorded: a step was recorded on the floor (anything but timer findings).
+export interface BatchView { status: BatchStatus; open: string[]; late: string[]; deviations: Deviation[]; exceptions: Exception[]; yieldOut: string[]; recorded: boolean }
 
 /** The batch status, and what stands in the way of the next signature; `read`: the deviations as Deviations has them now. */
 export function batchView(doc: MasterDoc, events: readonly StepEvent[], batchEvents: readonly BatchEvent[], now: Date, read?: ReadonlyMap<string, DeviationStatus> | null): BatchView {
@@ -148,7 +153,7 @@ export function batchView(doc: MasterDoc, events: readonly StepEvent[], batchEve
   const status: BatchStatus = has('released') ? 'released' : has('rejected') ? 'rejected' : has('qc_approved') ? 'QC approved'
     : has('production_approved') ? 'production approved' : open.length ? 'in production' : 'manufacturing complete';
   const exc = exceptions(events, batchEvents, read).map((x) => ({ ...x, where: stepLabel(doc, parseKey(x.step)!) }));
-  return { status, open, late, deviations: devs, exceptions: exc, yieldOut };
+  return { status, open, late, deviations: devs, exceptions: exc, yieldOut, recorded: events.some((e) => e.kind !== 'late') };
 }
 
 /** A batch status in words for people (the key stays as it is in the API and the published views); `capital`: the first letter in capitals. */
@@ -168,6 +173,10 @@ export function batchRefusal(action: BatchAction, v: BatchView, user: { id?: num
     if (!x) return no('There is no deviation note without a number with this number.');
     if (x.decision !== 'open') return no(`This note is already ${x.decision === 'closed' ? 'closed here' : 'sent to Deviations'}.`);
     return null;
+  }
+  if (action === 'abandon') {
+    if (v.status !== 'in production') return no(`The batch is ${words}.`);
+    return v.recorded ? no('A step of this batch has been recorded: QA terminates it (with what went back to stores).') : null;
   }
   if (action === 'close-deviation' || action === 'terminate') {
     if (v.status === 'released' || v.status === 'rejected') return no(`The batch is ${words}.`);
