@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { connect, type Sql } from '../server/db.js';
 import { links } from '../server/links.js';
-import { coaRefusal, type Coa } from '../shared/engine/lims.js';
+import { coaRefusal, ipcCodes, labFieldParameters, type Coa } from '../shared/engine/lims.js';
+import { BLOCKS, findBlock } from '../shared/blocks/index.js';
 import { qcReportText } from '../shared/engine/release.js';
 import { batchRecordDoc } from '../server/batch-record.js';
 import { loadBatch, recordInput } from '../server/routes/batches.js';
@@ -207,5 +208,39 @@ describe('the QC report of a lot typed by hand, picked from LIMS', () => {
     const s = await stepOf(b.id, '0.1.0.1');
     expect(s.values['lot.report']).toBe('SUP-123');
     expect(s.source['lot.report']).toEqual({ from: 'hand', link: 'lims', state: 'down' });
+  });
+});
+
+describe('A12 master_lab_field_v1: the in-process lab tests of each master version, for LIMS (fix round 21 Nov 2026)', () => {
+  it('the list of in-process fields in the database is the blocks\' (a new in-process field needs a migration replacing lab_field_parameters)', async () => {
+    const db = await t.owner`select block, block_name as "blockName", field, code, label, label_setting as "labelSetting", unit, unit_setting as "unitSetting", individual from lab_field_parameters`;
+    expect([...db]).toEqual(labFieldParameters(BLOCKS));
+  });
+  it('one row per test with the code a lab request names (@n for a block twice), the master\'s label and unit; a test without its unit is left out; a retired version not', async () => {
+    const kf = { block: { id: 'lab-test', version: 1 }, checker: false, settings: { what: 'Water by KF', unit: '%', limit: { high: '0.5', unit: '%' } } };
+    const lab = { block: { id: 'lab-tests', version: 1 }, checker: true, settings: { what1: 'Assay of the intermediate', unit1: '%', limit1: { low: '98.0', high: '102.0', unit: '%' } } };
+    // A reaction without an IPC unit asks QC for nothing.
+    const react = { block: { id: 'react', version: 1 }, checker: false, settings: { temperatureLimit: { low: '20', high: '25', unit: '°C' } } };
+    const doc = small([{ steps: [kf, { ...kf, name: 'Water by KF, second sample' }, lab, react, { block: { id: 'stage-yield', version: 1 }, checker: true, settings: { theoretical: '0.100 kg', yieldLimit: { low: '97.0', high: '100.5', unit: '%' } } }] }]);
+    doc.stages[0]!.name = 'A12 stage';
+    const res = await as('author', 'POST', '/api/masters', { doc });
+    expect(res.statusCode, res.body).toBe(200);
+    const { id } = res.json() as { id: number };
+    const rows = () => t.owner.unsafe(`select product_code, master_version, master_state, stage_title, step_title, code, label, unit, individual
+      from ${t.schema}_report.master_lab_field_v1 where stage_title = 'A12 stage' order by code`);
+    expect(await rows()).toEqual([
+      { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'QC lab in-process test', code: 'lab-test.result@1', label: 'Result', unit: '%', individual: null },
+      { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'Water by KF, second sample', code: 'lab-test.result@2', label: 'Result', unit: '%', individual: null },
+      { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'In-process lab tests (QC lab)', code: 'lab-tests.test1', label: 'Assay of the intermediate', unit: '%', individual: null },
+    ]);
+    // The same codes as a batch's lab request.
+    const v = (await as('author', 'GET', `/api/master-versions/${id}`)).json() as { doc: Parameters<typeof ipcCodes>[0] };
+    expect(ipcCodes(v.doc, 0, 1, findBlock({ id: 'lab-test', version: 1 })!.fields)).toEqual({ result: 'lab-test.result@2' });
+    for (const s of ['in_review', 'approved', 'effective', 'retired']) await t.owner`update master_versions set state = ${s} where id = ${id}`;
+    expect(await rows()).toEqual([]);
+    const cols = await t.owner<{ c: string }[]>`select column_name || ' ' || data_type as c from information_schema.columns
+      where table_schema = ${`${t.schema}_report`} and table_name = 'master_lab_field_v1' order by ordinal_position`;
+    expect(cols.map((r) => r.c)).toEqual(['product_code text', 'master_version integer', 'master_state text', 'stage_title text', 'step_title text', 'code text', 'label text', 'unit text',
+      'individual integer', 'data_as_of timestamp with time zone']);
   });
 });
