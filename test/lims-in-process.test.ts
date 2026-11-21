@@ -174,7 +174,7 @@ describe('a QC lab in-process test picked from LIMS', () => {
 
   it('TA-14 the step opens its lab request as it starts (lab_request_v1, open), with its test in the step\'s unit', async () => {
     expect(await requests(b.batchNo)).toEqual([{ request_id: `${b.batchNo}/0.1.0.1`, product_code: 'P', step_title: 'QC lab in-process test: Water by KF',
-      tests: [{ code: 'lab-test.result', name: 'result', label: 'Result', unit: '%', individual: null }], status: 'open' }]);
+      tests: [{ code: 'lab-test.result', name: 'result', label: 'Water by KF', unit: '%', individual: null }], status: 'open' }]);
   });
 
   it('TA-14 while LIMS answers the result is picked (its reported figure, kept with the report and request); typing is refused', async () => {
@@ -348,7 +348,7 @@ describe('Tablets round 45: in-process test codes unique within the product (lab
   it('TA-14 the lab request lists each test with its code; a result of another code is refused, its own code taken', async () => {
     const b = await issue();
     await act(b.id, '0.1.0.1', 'start');
-    expect((await requests(b.batchNo))[0]!.tests).toEqual([{ code: 'lab-test.result', name: 'result', label: 'Result', unit: '%', individual: null }]);
+    expect((await requests(b.batchNo))[0]!.tests).toEqual([{ code: 'lab-test.result', name: 'result', label: 'Water by KF', unit: '%', individual: null }]);
     await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.10', '%', { ipcCode: 'react.ipcResult@1' });
     const own = await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.42', '%', { ipcCode: 'lab-test.result', ipcField: 'other' });
     const p = await picks(b.id, '0.1.0.1');

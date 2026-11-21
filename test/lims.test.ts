@@ -229,8 +229,8 @@ describe('A12 master_lab_field_v1: the in-process lab tests of each master versi
     const rows = () => t.owner.unsafe(`select product_code, master_version, master_state, stage_title, step_title, code, label, unit, individual
       from ${t.schema}_report.master_lab_field_v1 where stage_title = 'A12 stage' order by code`);
     expect(await rows()).toEqual([
-      { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'QC lab in-process test', code: 'lab-test.result@1', label: 'Result', unit: '%', individual: null },
-      { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'Water by KF, second sample', code: 'lab-test.result@2', label: 'Result', unit: '%', individual: null },
+      { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'QC lab in-process test', code: 'lab-test.result@1', label: 'Water by KF', unit: '%', individual: null },
+      { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'Water by KF, second sample', code: 'lab-test.result@2', label: 'Water by KF', unit: '%', individual: null },
       { product_code: 'P', master_version: 1, master_state: 'draft', stage_title: 'A12 stage', step_title: 'In-process lab tests (QC lab)', code: 'lab-tests.test1', label: 'Assay of the intermediate', unit: '%', individual: null },
     ]);
     // The same codes as a batch's lab request.

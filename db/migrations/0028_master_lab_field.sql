@@ -13,7 +13,7 @@
 
 create or replace view lab_field_parameters (block, block_name, field, code, label, label_setting, unit, unit_setting, individual) as values
   ('react', 'Process to an end point', 'ipcResult', 'react.ipcResult', 'IPC result', null, null, 'ipcUnit', null::int),
-  ('lab-test', 'QC lab in-process test', 'result', 'lab-test.result', 'Result', null, null, 'unit', null::int),
+  ('lab-test', 'QC lab in-process test', 'result', 'lab-test.result', 'Result', 'what', null, 'unit', null::int),
   ('lab-tests', 'In-process lab tests (QC lab)', 'test1', 'lab-tests.test1', 'Lab test 1', 'what1', null, 'unit1', null::int),
   ('lab-tests', 'In-process lab tests (QC lab)', 'test2', 'lab-tests.test2', 'Lab test 2', 'what2', null, 'unit2', null::int),
   ('lab-tests', 'In-process lab tests (QC lab)', 'test3', 'lab-tests.test3', 'Lab test 3', 'what3', null, 'unit3', null::int)

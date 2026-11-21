@@ -8,7 +8,7 @@ import type { Block } from './format.js';
 export const labTest: Block = {
   id: 'lab-test', version: 1, name: 'QC lab in-process test', checker: false,
   instruction: 'Take the sample, label it and send it to QC. Pick the result from LIMS once QC has approved it.',
-  fields: [{ name: 'result', label: 'Result', kind: 'number', unit: '$unit', qc: 'in_process' }],
+  fields: [{ name: 'result', label: 'Result', kind: 'number', unit: '$unit', qc: 'in_process', labelFrom: 'what' }],
   settings: [
     { name: 'what', label: 'What is tested', kind: 'text' },
     { name: 'unit', label: 'Unit', kind: 'text' },
