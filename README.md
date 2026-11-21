@@ -25,7 +25,12 @@ name and master version, 0008), `equipment_use_v1`, `deviation_note_v1` (`db/mig
 unit; a machine or room is in use by its batch until the last stage of the batch that names it (or may run in its room) closes, a balance is never in use by a batch, and both views name the step in words
 (`step_name`, 0010 and 0011). `reading_v1` (0024, Tablets round 46) gives every recorded number of a step signed
 done (process parameters and in-process checks, one row per reading) with the master's limits, for Operations'
-continued process verification (`docs/design.md` "Readings for CPV").
+continued process verification (`docs/design.md` "Readings for CPV"). `master_lab_field_v1` (0028) lists the in-process
+lab tests of each master version that is not retired, with the codes its batches' lab requests will name, so LIMS can
+write its in-process specification before the first batch. Fix round 21 Nov 2026 (ported from TrueBatch Tablets): an
+in-process lab tests block (up to three tests), deleting a draft master, production abandoning a batch before its
+first step, undoing a weighing to weigh another lot, balances offered within their range, a limit shown in its
+reading's unit.
 
 ## Develop
 Needs Node 22 and PostgreSQL 17.
