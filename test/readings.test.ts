@@ -79,6 +79,16 @@ describe('reading_v1', () => {
     expect((await rows('READ-1')).find((x) => x.field === 'temperature')).toMatchObject({ value: '61.5', corrected: true, recorded_at: new Date('2026-11-20T10:00:00Z') });
   });
 
+  it('A2 a lab tests step: each test\'s parameter is what the master says it tests', async () => {
+    const e = await batch('READ-2', [{ key: 'ipc', block: { id: 'lab-tests', version: 1 }, settings: { what1: 'Assay of the intermediate', unit1: '%', limit1: { low: '98.0', high: '102.0', unit: '%' },
+      what2: 'Water by KF', unit2: '%', limit2: { high: '0.5', unit: '%' } } }]);
+    await e(0, 1, 'started', {}, '2026-11-20 09:00+00');
+    await e(0, 1, 'value', { values: { test1: q('99.4', '%'), test2: q('0.21', '%') } }, '2026-11-20 09:01+00');
+    await e(0, 1, 'done', {}, '2026-11-20 09:02+00');
+    expect((await rows('READ-2')).map((x) => [x.field, x.parameter, x.low_limit, x.high_limit])).toEqual([
+      ['test1', 'Assay of the intermediate', '98.0', '102.0'], ['test2', 'Water by KF', null, '0.5']]);
+  });
+
   it('is published in the report schema with its columns, closed to everybody until the platform links a reader', async () => {
     const cols = await t.owner.unsafe(`select column_name || ' ' || data_type as c from information_schema.columns where table_schema = $1 and table_name = 'reading_v1' order by ordinal_position`, [rep()]);
     expect(cols.map((c) => c.c)).toEqual(['reading_id text', 'batch_number text', 'product_code text', 'stage text', 'step text', 'step_name text', 'sub_batch integer', 'round integer',
