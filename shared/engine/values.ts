@@ -300,6 +300,27 @@ export function evaluate(doc: MasterDoc, events: readonly StepEvent[], key: Step
 }
 
 /**
+ * Fix round 21 Nov 2026 (A8): the quantity a weighing step weighs, for the balance's range: its target as worked out
+ * (`results`, once a value is recorded: adjusted with the lot), else the formula line's batch quantity before any
+ * adjustment, or a target typed in the master. Undefined for a step without a target.
+ */
+export function weighTarget(doc: MasterDoc, key: StepKey, results: Readonly<Record<string, Stored>> = {}): { value: string; unit: string } | undefined {
+  const st = doc.stages[key.stage]?.steps[key.step];
+  const v = st?.settings.target;
+  if (!st || !v || !findBlock(st.block)?.settings.some((s) => s.name === 'target' && s.kind === 'quantity')) return undefined;
+  const r = results.target;
+  if (r?.ok) return { value: r.value, unit: r.unit };
+  if (typeof v === 'string') {
+    const m = /^[+-]?(\d+(\.\d*)?|\.\d+)\s*(\S.*)?$/.exec(v.trim());
+    const u = m && findUnit(m[3] ?? '');
+    return m && u ? { value: m[1]!, unit: u.symbol } : undefined;
+  }
+  const line = typeof v === 'object' && 'formula' in v ? doc.formula.find((l) => l.key === v.formula) : undefined;
+  const q = line ? lineQuantity(doc, [], key, line, false, {}) : undefined;
+  return q?.ok ? { value: q.value, unit: q.unit } : undefined;
+}
+
+/**
  * Fix round 21 Nov 2026 (A11, a limit in kPa, the reading in mbar): the limit setting a block checks a reading
  * against (C1, "$field" against "$limit"), when the reading's unit is named by the step (unit "$setting") and the
  * limit is written in another unit of the same kind: the limit in the reading's unit, for the floor to show beside it

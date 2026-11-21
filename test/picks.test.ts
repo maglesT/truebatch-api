@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { findBlock } from '../shared/blocks/index.js';
-import { dispensingRooms, emptyNote, machineRefusal, untypedNote } from '../shared/engine/picks.js';
+import { balanceCapacity, dispensingRooms, emptyNote, machineRefusal, untypedNote } from '../shared/engine/picks.js';
+import { weighTarget } from '../shared/engine/values.js';
+import { api } from './engine-fixture.js';
 import { SKELETON_LIST, skeletonStages } from '../web/src/designer/skeletons.js';
 
 // Equipment and instrument types of an API plant's master data, with a few real types that share a word with them and
@@ -73,5 +75,31 @@ describe('machine pickers on the demo master-data types', () => {
     expect(emptyNote(stage, reactor, all, ROOMS)).toBe('No reactor or vessel can be used here: RCT-01 stands in RM-103, not in a room this stage allows (RM-105). '
       + '1 machine has no type in master data, so it is not offered. Engineering moves one into a room this stage allows, or adds one, in master data (the Logbook shows where each stands).');
     expect(emptyNote(stage, reactor, all.slice(1), ROOMS)).toBe('Master data has no active reactor or vessel. 1 machine has no type in master data, so it is not offered. Engineering adds it in master data.');
+  });
+});
+
+describe('A8 pickers: a balance for the quantity weighed (fix round 21 Nov 2026)', () => {
+  const stage = { key: 's', name: 'S', kind: 'normal' as const, roomTypes: [], machineTypes: [], role: '', uses: [], steps: [] };
+  it('a balance is offered when the quantity is within its capacity and at least 0.5 % of it; a name without a capacity is not checked', () => {
+    const f = findBlock({ id: 'weigh', version: 1 })!.fields.find((x) => x.name === 'balance')!;
+    const bal = [{ code: 'IN-BAL-03', type: 'Balance', name: 'Platform balance 300 kg' }, { code: 'IN-BAL-04', type: 'Balance', name: 'Precision balance 6 kg' },
+      { code: 'IN-BAL-05', type: 'Balance', name: 'Floor balance' }];
+    expect(balanceCapacity(bal[0]!)).toBe(300);
+    expect(balanceCapacity({ code: 'x', name: 'Analytical balance 220 g' })).toBeCloseTo(0.22);
+    const offered = (value: string, unit: string) => bal.filter((m) => !machineRefusal(stage, f, m, [], [], { value, unit })).map((m) => m.code);
+    expect(offered('0.04', 'kg')).toEqual(['IN-BAL-04', 'IN-BAL-05']);
+    expect(offered('12.000', 'kg')).toEqual(['IN-BAL-03', 'IN-BAL-05']);
+    expect(offered('3.26', 'kg')).toEqual(['IN-BAL-03', 'IN-BAL-04', 'IN-BAL-05']);
+    expect(machineRefusal(stage, f, bal[0]!, [], [], { value: '0.04', unit: 'kg' })).toBe('IN-BAL-03 (300 kg) is too large for 0.04 kg: a balance weighs at least 0.5 % of its capacity (1.5 kg); use a smaller balance');
+    expect(machineRefusal(stage, f, bal[1]!, [], [], { value: '12', unit: 'kg' })).toBe('IN-BAL-04 weighs at most 6 kg: 12 kg is too much for it');
+    expect(machineRefusal(stage, f, bal[0]!, [])).toBeNull();
+  });
+  it('weighTarget: the formula line batch quantity of a weighing step, or its worked-out target', () => {
+    const d = api();
+    const s = d.stages.findIndex((x) => x.steps.some((t) => t.key === 'weigh-naoh'));
+    const key = { stage: s, sub: 1, step: d.stages[s]!.steps.findIndex((t) => t.key === 'weigh-naoh'), round: 1 };
+    expect(weighTarget(d, key)).toMatchObject({ unit: 'kg' });
+    expect(weighTarget(d, key, { target: { ok: true, value: '2.500', unit: 'kg' } as never })).toEqual({ value: '2.500', unit: 'kg' });
+    expect(weighTarget(d, { ...key, step: key.step + 1 })).toBeUndefined();
   });
 });

@@ -21,7 +21,7 @@ beforeAll(async () => {
   t.master.materials_.push({ ...item('prd-1', 'API-001', 'Examplone hydrochloride'), category: 'API', unit: 'kg' });
   for (const l of api().formula) t.master.materials_.push({ ...item(l.materialItemId, l.code, l.name), category: null, unit: 'kg' });
   t.master.equipment_.push(
-    { ...item('eq-bal', 'BAL-01', 'Balance 60 kg'), kind: 'instrument', type: 'balance', room: 'DSP-01' },
+    { ...item('eq-bal', 'BAL-01', 'Balance 150 kg'), kind: 'instrument', type: 'balance', room: 'DSP-01' },
     { ...item('eq-str', 'STR-01', 'Stirrer'), kind: 'equipment', type: 'stirrer', room: 'GRN-01' },
     { ...item('eq-prs', 'PRS-01', 'Tablet press'), kind: 'equipment', type: 'tablet press', room: 'CMP-01' },
   );
@@ -319,7 +319,7 @@ describe('walking a stage', () => {
     expect(text).not.toMatch(/\b(?:balance|lot|machine|room)\.[a-zA-Z]/);
     expect(text).toContain('(limit ± 0.5 %)');
     // Machines and rooms by code and name, without master data's version.
-    expect(text).toContain('Balance: BAL-01 · Balance 60 kg');
+    expect(text).toContain('Balance: BAL-01 · Balance 150 kg');
     expect(text).not.toMatch(/ \(v\d+\)/);
     expect(text).not.toContain('within limits\nPASS');
     expect(text).toContain('FAIL: out of limits');
