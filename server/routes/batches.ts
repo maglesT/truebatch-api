@@ -254,7 +254,7 @@ async function readValues(app: FastifyInstance, tx: Tx, doc: MasterDoc, key: Ste
 }
 
 const reason = z.string().trim().min(1).max(1000);
-const values = z.record(z.unknown());
+const values = z.record(z.string(), z.unknown());
 const BODIES: Record<Action, z.ZodTypeAny> = {
   start: z.object({}),
   record: z.object({ values }),

@@ -20,7 +20,7 @@ const TABS: [Tab, string][] = [['header', 'Header'], ['formula', 'Formula'], ['p
 type Save = { kind: 'saved' | 'saving' | 'pending' } | { kind: 'invalid' | 'error'; message: string };
 
 const FIELD: Record<string, string> = { mgPerTablet: 'mg per tablet', batchSize: 'batch size', coreWeightMg: 'core weight', coatedWeightMg: 'coated weight', name: 'name', key: 'key', holdHours: 'hold time', count: 'number of sub-batches' };
-function issueText(doc: MasterDoc, path: (string | number)[], message: string): string {
+function issueText(doc: MasterDoc, path: PropertyKey[], message: string): string {
   const [a, i, b, j] = path;
   const where = a === 'formula' && typeof i === 'number' ? `Formula line ${i + 1} (${doc.formula[i]?.name || 'no material'})`
     : a === 'stages' && typeof i === 'number' ? `${doc.stages[i]?.name || `Stage ${i + 1}`}${b === 'steps' && typeof j === 'number' ? `, step ${j + 1}` : ''}` : 'Header';
