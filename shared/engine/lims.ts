@@ -53,7 +53,7 @@ const PURPOSES: Record<CoaFor['kind'], string[]> = { BATCH: ['release'], LOT: ['
 export function coaRefusal(c: Coa, want: CoaFor): string | null {
   const no = c.coaNumber ?? `of sample ${c.sampleNumber}`;
   const what = want.kind === 'BATCH' ? `batch ${want.batchNo}` : `lot ${want.lot}`;
-  if (c.decision !== 'APPROVED' || c.rejected || !c.coaNumber) return `CoA ${no} is not approved in LIMS (${c.decision.toLowerCase()}): only an approved CoA may be used.`;
+  if (c.decision !== 'APPROVED' || c.rejected || !c.coaNumber) return `CoA ${no} is not approved in QLIMS (${c.decision.toLowerCase()}): only an approved CoA may be used.`;
   if (c.itemKind !== 'MATERIAL') return `CoA ${no} is of a ${(c.itemKind ?? 'other').toLowerCase()} sample, not of ${what}.`;
   if (!same(c.lotNumber, want.kind === 'BATCH' ? want.batchNo : want.lot)) return `CoA ${no} is for ${want.kind === 'BATCH' ? 'batch' : 'lot'} ${c.lotNumber ?? '—'}, not ${what}.`;
   const [id, code] = want.kind === 'BATCH' ? [want.itemId, want.code] : [want.materialId, want.materialCode];
@@ -69,7 +69,7 @@ export function coaRefusal(c: Coa, want: CoaFor): string | null {
 }
 
 /** The CoA as the step, the review and the PDF show it (kept with the record as the source's `shown`). */
-export const coaText = (c: Coa) => `LIMS CoA ${c.coaNumber}: sample ${c.sampleNumber}${c.itemCode ? `, ${c.itemCode}` : ''}${c.lotNumber ? ` ${c.lotNumber}` : ''}, approved${c.decidedBy ? ` by ${c.decidedBy}` : ''}${c.specNumber ? `, specification ${c.specNumber}${c.specVersion ? ` v${c.specVersion}` : ''}` : ''}`;
+export const coaText = (c: Coa) => `QLIMS CoA ${c.coaNumber}: sample ${c.sampleNumber}${c.itemCode ? `, ${c.itemCode}` : ''}${c.lotNumber ? ` ${c.lotNumber}` : ''}, approved${c.decidedBy ? ` by ${c.decidedBy}` : ''}${c.specNumber ? `, specification ${c.specNumber}${c.specVersion ? ` v${c.specVersion}` : ''}` : ''}`;
 
 const NUMBER = /^-?\d+(\.\d+)?$/;
 /**
@@ -158,7 +158,7 @@ const FIGURE: Record<string, string> = { mean: 'mean', AV: 'acceptance value', r
  * An in-process result as the step, the review and the PDF show it (kept with the record as the source's `shown`):
  * the request it was sampled for, and (round 43) the round and time that request opened, when it is a step with rounds.
  */
-export const inProcessText = (r: QcResult, request: string, sampled?: { round?: number; at?: string }) => `LIMS in-process report ${r.coaNumber}: ${r.testName ?? 'result'} (request ${request}`
+export const inProcessText = (r: QcResult, request: string, sampled?: { round?: number; at?: string }) => `QLIMS in-process report ${r.coaNumber}: ${r.testName ?? 'result'} (request ${request}`
   + `${sampled?.round ? `, sampled in round ${sampled.round}` : ''}${sampled?.at ? `${sampled.round ? ' at' : ', requested'} ${sampled.at}` : ''})`
   + `${r.reported ? `, ${r.reported}${r.unit ? ` ${r.unit}` : ''} as reported` : ''}${r.limitText ? ` (limit ${r.limitText})` : ''}`
   + `${r.analysisNumber ? `, analysis ${r.analysisNumber}` : ''}${r.outsideLab ? `, outside lab ${r.outsideLab}` : ''}`;
@@ -178,6 +178,6 @@ export function inProcessFit(r: Pick<QcResult, 'testName' | 'coaNumber' | 'unit'
   if (!sameUnit(r.unit, unit)) return { error: `${what} is in ${r.unit || 'no unit'}, not in ${unit}.` };
   if (r.individual?.length) return { error: `${what} is a list of ${r.individual.length} values: ${f.label} takes one result.` };
   if (r.figure && r.figure !== 'result') return { error: `${what} reports the ${FIGURE[r.figure] ?? r.figure}, not one result: it is not ${f.label}.` };
-  if (!r.reported || !NUMBER.test(r.reported.trim())) return { error: `${what} has no reported figure in LIMS.` };
+  if (!r.reported || !NUMBER.test(r.reported.trim())) return { error: `${what} has no reported figure in QLIMS.` };
   return { take: { [f.name]: r.reported.trim() } };
 }

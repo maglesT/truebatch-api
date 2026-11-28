@@ -131,7 +131,7 @@ export function masterChecks(doc: MasterDoc): Problem[] {
       const times = doc.stages.reduce((n, x) => n + x.steps.filter((y) => y.block.id === st.block.id).length, 0);
       const asked = block.fields.filter((f) => !f.unit?.startsWith('$') || typeof st.settings[f.unit.slice(1)] === 'string');
       const codes = [...new Set(Object.values(ipcCodes(doc, si, ti, asked)))];
-      if (times > 1 && codes.length) out.push({ level: 'info', path: p, message: `${block.name} is in this master ${times} times: this step's in-process test is ${codes.join(', ')}. LIMS specification must map each occurrence` });
+      if (times > 1 && codes.length) out.push({ level: 'info', path: p, message: `${block.name} is in this master ${times} times: this step's in-process test is ${codes.join(', ')}. QLIMS specification must map each occurrence` });
     });
   });
   packChecks(doc, error);

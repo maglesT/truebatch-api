@@ -177,7 +177,7 @@ describe('TA-11 Logbook: equipment and rooms fit for use', () => {
     expect(s.values.cleanedOn).toMatch(/^2026-11-15 05:30/);
     expect(s.source.cleanedBy).toMatchObject({ from: 'logbook' });
     expect(s.handFields).toEqual([]);
-    expect(await problems(record(b.id, '0.1.0.1', { cleanedBy: 'SOMEONE ELSE' }))).toEqual(['Cleaned by (name on the label) comes from Logbook and cannot be typed over']);
+    expect(await problems(record(b.id, '0.1.0.1', { cleanedBy: 'SOMEONE ELSE' }))).toEqual(['Cleaned by (name on the label) comes from LEAD and cannot be typed over']);
     expect((await record(b.id, '0.1.0.1', { previousRemoved: 'yes', noOther: 'yes' })).statusCode).toBe(200);
     expect((await sign('asha', b.id, '0.1.0.1', 'done')).statusCode).toBe(200);
   });
@@ -193,7 +193,7 @@ describe('TA-11 Logbook: equipment and rooms fit for use', () => {
     // A picker with choices has no note; an empty one names what the Logbook does not have.
     expect(picks.note).toBeNull();
     expect(inLogbook(stirrers.filter((m) => m.code === 'STR-05'), r.items)).toEqual({ offered: [],
-      note: 'Not offered, because the Logbook does not have it: STR-05. Only what the Logbook has can be used while it is linked.' });
+      note: 'Not offered, because LEAD does not have it: STR-05. Only what LEAD has can be used while it is linked.' });
     expect(inLogbook(t.master.rooms_, r.items).offered.map((x) => x.code)).toEqual(['GRN-01']);
     await cut(S.lb);
     try {
@@ -205,9 +205,9 @@ describe('TA-11 Logbook: equipment and rooms fit for use', () => {
 
   it('TA-11 a machine the Logbook says is not fit for use is refused with the Logbook\'s reasons; one in use by another batch too', async () => {
     await act('asha', b.id, '0.1.1.1', 'start');
-    expect(await problems(record(b.id, '0.1.1.1', { machine: 'eq-str2' }))).toEqual(['STR-02 is not fit for use (Logbook): Dirty: clean and verify before the next use; Calibration overdue.']);
-    expect(await problems(record(b.id, '0.1.1.1', { machine: 'eq-str3' }))).toEqual(['STR-03 is in use by batch XB26001 (Logbook).']);
-    expect(await problems(record(b.id, '0.1.1.1', { machine: 'eq-str5' }))).toEqual(['STR-05 is not in the Logbook, so it cannot be used.']);
+    expect(await problems(record(b.id, '0.1.1.1', { machine: 'eq-str2' }))).toEqual(['STR-02 is not fit for use (LEAD): Dirty: clean and verify before the next use; Calibration overdue.']);
+    expect(await problems(record(b.id, '0.1.1.1', { machine: 'eq-str3' }))).toEqual(['STR-03 is in use by batch XB26001 (LEAD).']);
+    expect(await problems(record(b.id, '0.1.1.1', { machine: 'eq-str5' }))).toEqual(['STR-05 is not in LEAD, so it cannot be used.']);
   });
 
   it('TA-11 a machine fit for use is pulled with its status: no label questions, no extra check', async () => {
@@ -251,7 +251,7 @@ describe('TA-11 Logbook: equipment and rooms fit for use', () => {
       const c = await issue(small([{ machineTypes: ['stirrer'], steps: [{ block: { id: 'mix', version: 1 }, settings: {} }, yieldStep] }]));
       await act('asha', c.id, '0.1.0.1', 'start');
       expect(await problems(record(c.id, '0.1.0.1', { machine: 'eq-str' }))).toEqual(
-        ['STR-01 was last used for an antibiotic (FG-PWD-EXC1): a product-changeover cleaning is needed in the Logbook before P.']);
+        ['STR-01 was last used for an antibiotic (FG-PWD-EXC1): a product-changeover cleaning is needed in LEAD before P.']);
       // The same product follows: allowed, pulled.
       await t.owner.unsafe(`update ${S.lb}.equipment_status_v1 set only_product = 'P' where master_id = 'eq-str'`);
       expect((await record(c.id, '0.1.0.1', { machine: 'eq-str', speed: '300' })).statusCode).toBe(200);
@@ -464,7 +464,7 @@ describe('TA-21 Deviations: the deviation number and its status come from the De
     const picks = (await as('asha', 'GET', `/api/batches/${b.id}/deviations`)).json() as { link: string; deviations: { number: string }[] };
     expect(picks.deviations.map((d) => d.number)).toEqual(['DEV-26-0001', 'DEV-26-0099']);
     expect((await act('asha', b.id, '0.1.0.1', 'note', { text: 'pH 7.4', reference: 'DEV-26-9999' })).json())
-      .toMatchObject({ error: 'unknown_deviation', problems: ['DEV-26-9999 is not in the Deviations system: pick one of the deviations of this batch, or check the number.'] });
+      .toMatchObject({ error: 'unknown_deviation', problems: ['DEV-26-9999 is not in DIVE: pick one of the deviations of this batch, or check the number.'] });
     expect((await act('asha', b.id, '0.1.0.1', 'note', { text: 'pH 7.4', reference: 'DEV-26-0001' })).statusCode).toBe(200);
   });
 
@@ -473,7 +473,7 @@ describe('TA-21 Deviations: the deviation number and its status come from the De
     const note = ((await as('meera', 'GET', `/api/batches/${b.id}/review`)).json() as { deviations: { note: number }[]; unlinked: { number: string }[] });
     expect(note.unlinked.map((d) => d.number)).toEqual(['DEV-26-0099']);
     expect((await as('meera', 'POST', `/api/batches/${b.id}/close-deviation`, { note: note.deviations[0]!.note, reason: 'Closed' })).json())
-      .toMatchObject({ problems: ['The status of DEV-26-0001 comes from the Deviations system (now under investigation): it is closed there.'] });
+      .toMatchObject({ problems: ['The status of DEV-26-0001 comes from DIVE (now under investigation): it is closed there.'] });
     await t.owner.unsafe(`update ${S.dv}.deviation_v1 set status = 'closed', closed_at = now() where number = 'DEV-26-0001'`);
     expect(await devs()).toMatchObject({ deviations: [{ reference: 'DEV-26-0001', open: false, status: 'closed' }] });
   });
@@ -485,7 +485,7 @@ describe('TA-21 Deviations: the deviation number and its status come from the De
     const approved: BatchEvent[] = [{ id: 1, kind: 'production_approved', payload: {}, person: 3, at: at(5) }, { id: 2, kind: 'qc_approved', payload: { reportNo: 'QC-1' }, person: 4, at: at(6) }];
     const qa = { id: 9, permissions: ['truebatch_api.qa.release'] };
     const release = (status: string) => batchRefusal('release', batchView(doc, events, approved, at(10), new Map([['DEV-26-001', { status, closedAt: null }]])), qa)?.problems ?? null;
-    expect(release('investigation')).toEqual(['Deviation DEV-26-001 (Stage 0 › Check a value against limits: pH) is still open in the Deviations system (under investigation): it is closed there first']);
+    expect(release('investigation')).toEqual(['Deviation DEV-26-001 (Stage 0 › Check a value against limits: pH) is still open in DIVE (under investigation): it is closed there first']);
     expect(release('closed')).toBeNull();
     expect(release('rejected')).toBeNull();
   });
@@ -522,7 +522,7 @@ describe('TA-02 QMS: a new master version needs a QA-approved change control', (
     const { id, review } = await draft();
     expect((await review('quality', 'approve', { changeControl: 'CC-404' })).json()).toMatchObject({ error: 'unknown_change_control' });
     expect((await review('quality', 'approve', { changeControl: 'CC-2026-0002' })).json())
-      .toMatchObject({ error: 'change_not_approved', message: 'CC-2026-0002 is at the step “qa” in QMS and not approved by QA: only a QA-approved change control (implementation, closure, closed) can carry a new version.' });
+      .toMatchObject({ error: 'change_not_approved', message: 'CC-2026-0002 is at the step “qa” in ASSURE and not approved by QA: only a QA-approved change control (implementation, closure, closed) can carry a new version.' });
     expect((await review('quality', 'approve', { changeControl: 'CC-2026-0003' })).json()).toMatchObject({ error: 'change_not_approved' });
     expect((await review('quality', 'approve', { changeControl: 'CC-2026-0001' })).statusCode).toBe(200);
     const [e] = await t.owner<{ payload: { source: { changeControl: { from: string; shown: string } } } }[]>`
@@ -539,10 +539,10 @@ describe('TA-02 QMS: a new master version needs a QA-approved change control', (
     const picks = (await as('quality', 'GET', `/api/change-controls?version=${id}`)).json() as { changes: { number: string; names: string }[] };
     expect(picks.changes.map((c) => [c.number, c.names])).toEqual([['CC-2026-0005', 'none'], ['CC-2026-0001', 'yes']]);
     expect((await review('quality', 'approve', { changeControl: 'CC-2026-0004' })).json()).toMatchObject({ error: 'other_product',
-      message: 'CC-2026-0004 is for FG-PCM500 Paracetamol 500 mg tablets in QMS, not for API-001 Examplone hydrochloride: pick the change control of this product.' });
+      message: 'CC-2026-0004 is for FG-PCM500 Paracetamol 500 mg tablets in ASSURE, not for API-001 Examplone hydrochloride: pick the change control of this product.' });
     expect((await review('quality', 'approve', { changeControl: 'CC-2026-0005' })).statusCode).toBe(200);
     const [e] = await t.owner<{ payload: { source: { changeControl: { shown: string } } } }[]>`select payload from master_events where version_id = ${id} and kind = 'approved'`;
-    expect(e!.payload.source.changeControl.shown).toMatch(/QMS names no product: QA checked that it covers API-001$/);
+    expect(e!.payload.source.changeControl.shown).toMatch(/ASSURE names no product: QA checked that it covers API-001$/);
     const c = (products: string | null) => ({ number: 'CC', status: 'closed', title: null, qaApprovedAt: 'x', products });
     const prd = { productCode: 'FG-ATV20', productName: 'Atorvastatin calcium tablets 20 mg' };
     expect([c('fg-atv20, FG-ATV40'), c('ATORVASTATIN CALCIUM TABLETS 20 MG'), c('FG-ATV200'), c(' '), c(null), c('none'), c(' None ')].map((x) => namesProduct(x, prd))).toEqual(['yes', 'yes', 'no', 'none', 'none', 'none', 'none']);
@@ -853,7 +853,7 @@ describe('a note without a number is closed here or sent to Deviations (owner de
     expect(r.decision).toBe('sent');
     expect(r.sent_at).toBeInstanceOf(Date);
     expect((await as('dina', 'POST', `/api/batches/${b.id}/close-exception`, { note: x!.note, reason: 'x', proof: proofFor('dina'), contentHash: (await batch()).contentHash })).json())
-      .toMatchObject({ problems: ['This note is already sent to Deviations.'] });
+      .toMatchObject({ problems: ['This note is already sent to DIVE.'] });
     const [audit] = await t.owner`select action from audit_log where object_type = 'batch' and object_id = ${String(b.id)} and action = 'batch.exception_sent'`;
     expect(audit).toBeDefined();
   });
@@ -891,10 +891,10 @@ describe('the deviation number flows back to the batch record (owner, 17 Nov 202
       ('DEV-26-0123', 'investigation', '${b.batchNo}', '${b.batchNo.toLowerCase()}', 'Torn label', '${n!.source_ref as string}')`);
     const d = await devs();
     expect(d.deviations).toEqual([expect.objectContaining({ note: n!.id, step: '0.1.0.1', reference: 'DEV-26-0123', open: true, status: 'investigation', filed: true })]);
-    expect(deviationText(d.deviations[0]!)).toBe('DEV-26-0123 (filed in Deviations from this note) · under investigation (Deviations)');
+    expect(deviationText(d.deviations[0]!)).toBe('DEV-26-0123 (filed in DIVE from this note) · under investigation (DIVE)');
     // Open in Deviations: QA cannot close it by hand; the review lists it as linked, not as a deviation no note links.
     expect((await as('meera', 'POST', `/api/batches/${b.id}/close-deviation`, { note: n!.id, reason: 'Closed' })).json())
-      .toMatchObject({ problems: ['The status of DEV-26-0123 comes from the Deviations system (now under investigation): it is closed there.'] });
+      .toMatchObject({ problems: ['The status of DEV-26-0123 comes from DIVE (now under investigation): it is closed there.'] });
     const r = (await as('meera', 'GET', `/api/batches/${b.id}/review`)).json() as { deviations: Dev[]; unlinked: { number: string }[] };
     expect([r.deviations.map((x) => x.reference), r.unlinked]).toEqual([['DEV-26-0123'], []]);
     await t.owner.unsafe(`update ${S.dv}.deviation_v1 set status = 'closed', closed_at = now() where number = 'DEV-26-0123'`);
@@ -916,9 +916,9 @@ describe('the deviation number flows back to the batch record (owner, 17 Nov 202
     const l = (await loadBatch(t.sql, b.id))!;
     const note = l.events.find((e) => e.kind === 'note' && !e.payload.reference)!;
     const pdf = JSON.stringify(batchRecordDoc({ ...await recordInput(t.sql, l), deviationsRead: new Map([[filedKey(note.id), { status: 'capa', closedAt: null, number: 'DEV-26-0123' }]]) }, 'QA'));
-    expect(pdf).toContain('deviation DEV-26-0123 (filed in Deviations from this note) · waiting for its CAPA (Deviations): Torn label on the drum');
+    expect(pdf).toContain('deviation DEV-26-0123 (filed in DIVE from this note) · waiting for its CAPA (DIVE): Torn label on the drum');
     expect(pdf).toContain('deviation DEV-PAPER-9 (typed by hand) · open: Second label torn');
-    expect(pdf).toContain('"DEV-26-0123 (filed in Deviations from this note)"');
-    expect(pdf).toContain('OPEN: waiting for its CAPA in the Deviations system');
+    expect(pdf).toContain('"DEV-26-0123 (filed in DIVE from this note)"');
+    expect(pdf).toContain('OPEN: waiting for its CAPA in DIVE');
   });
 });

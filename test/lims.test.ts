@@ -26,8 +26,8 @@ describe('the LIMS rules (shared/engine/lims.ts): only an approved CoA of this b
   });
 
   it.each([
-    ['rejected', { decision: 'REJECTED', coaNumber: null }, 'CoA of sample LS26001 is not approved in LIMS (rejected): only an approved CoA may be used.'],
-    ['approved, then rejected', { rejected: true }, 'CoA COA26001 is not approved in LIMS (approved): only an approved CoA may be used.'],
+    ['rejected', { decision: 'REJECTED', coaNumber: null }, 'CoA of sample LS26001 is not approved in QLIMS (rejected): only an approved CoA may be used.'],
+    ['approved, then rejected', { rejected: true }, 'CoA COA26001 is not approved in QLIMS (approved): only an approved CoA may be used.'],
     ['of another batch', { lotNumber: 'TA260002' }, 'CoA COA26001 is for batch TA260002, not batch TA260001.'],
     ['of another material', { itemMasterId: 'q', itemCode: 'Q' }, 'CoA COA26001 is of Q, not P.'],
     ['of a product sample', { itemKind: 'PRODUCT' }, 'CoA COA26001 is of a product sample, not of batch TA260001.'],
@@ -42,12 +42,12 @@ describe('the LIMS rules (shared/engine/lims.ts): only an approved CoA of this b
     expect(coaRefusal(m({ purpose: 'retest' }), lot)).toBeNull();
     expect(coaRefusal(m({ itemMasterId: 'x', itemCode: 'X' }), lot)).toBe('CoA COA26001 is of X, not M.');
     expect(coaRefusal(m({ lotNumber: 'LOT-2' }), lot)).toBe('CoA COA26001 is for lot LOT-2, not lot LOT-1.');
-    expect(coaRefusal(m({ decision: 'REJECTED' }), lot)).toMatch(/not approved in LIMS/);
+    expect(coaRefusal(m({ decision: 'REJECTED' }), lot)).toMatch(/not approved in QLIMS/);
   });
 
   it('QC approval\'s report in words: from LIMS, or typed by hand', () => {
-    expect(qcReportText({ reportNo: 'COA26001', source: { from: 'lims', asOf: null, shown: 'LIMS CoA COA26001: sample LS26001' } })).toBe('QC report COA26001 (LIMS CoA COA26001: sample LS26001)');
-    expect(qcReportText({ reportNo: 'QC-1', source: { from: 'hand', link: 'lims', state: 'down' } })).toBe('QC report QC-1 (typed by hand: LIMS link down)');
+    expect(qcReportText({ reportNo: 'COA26001', source: { from: 'lims', asOf: null, shown: 'QLIMS CoA COA26001: sample LS26001' } })).toBe('QC report COA26001 (QLIMS CoA COA26001: sample LS26001)');
+    expect(qcReportText({ reportNo: 'QC-1', source: { from: 'hand', link: 'lims', state: 'down' } })).toBe('QC report QC-1 (typed by hand: QLIMS link down)');
     expect(qcReportText({ reportNo: 'QC-1' })).toBe('QC report QC-1');
   });
 });
@@ -140,15 +140,15 @@ describe('QC approval of the batch with its CoA from LIMS', () => {
     const p = await picks(b.id, '');
     expect(p.link).toBe('ok');
     expect(p.coas.map((c) => c.coaNumber)).toEqual([good]);
-    expect(p.coas[0]!.shown).toBe(`LIMS CoA ${good}: sample LS26${good.slice(5)}, P ${b.batchNo}, approved by QC ONE, specification SPEC-1 v2`);
+    expect(p.coas[0]!.shown).toBe(`QLIMS CoA ${good}: sample LS26${good.slice(5)}, P ${b.batchNo}, approved by QC ONE, specification SPEC-1 v2`);
   });
 
   it('TA-21 while LIMS answers, a number that is not an approved CoA of this batch there is refused, with the reason', async () => {
-    expect((await approve('QC-26-0042')).json()).toMatchObject({ error: 'not_in_lims', problems: [`QC-26-0042 is not an approved CoA of batch ${b.batchNo} in LIMS: pick one.`] });
+    expect((await approve('QC-26-0042')).json()).toMatchObject({ error: 'not_in_lims', problems: [`QC-26-0042 is not an approved CoA of batch ${b.batchNo} in QLIMS: pick one.`] });
     const stability = `COA26${String(Number(good.slice(5)) + 2).padStart(3, '0')}`;
     expect((await approve(stability)).json()).toMatchObject({ error: 'not_in_lims', problems: [`CoA ${stability} is of a stability sample: only the release CoA of batch ${b.batchNo} may be used.`] });
     const other = `COA26${String(Number(good.slice(5)) + 4).padStart(3, '0')}`;
-    expect((await approve(other)).json()).toMatchObject({ error: 'not_in_lims', problems: [`${other} is not an approved CoA of batch ${b.batchNo} in LIMS: pick one.`] });
+    expect((await approve(other)).json()).toMatchObject({ error: 'not_in_lims', problems: [`${other} is not an approved CoA of batch ${b.batchNo} in QLIMS: pick one.`] });
   });
 
   it('TA-21 the picked CoA is kept with the approval (signed with it), on the release screen and in the PDF', async () => {
@@ -156,10 +156,10 @@ describe('QC approval of the batch with its CoA from LIMS', () => {
     expect(r.statusCode, r.body).toBe(200);
     const [e] = await t.owner<{ payload: { reportNo: string; source: { from: string; shown: string } } }[]>`select payload from batch_events where batch_id = ${b.id} and kind = 'qc_approved'`;
     // The CoA number as LIMS writes it.
-    expect(e!.payload).toMatchObject({ reportNo: good, source: { from: 'lims', shown: expect.stringContaining(`LIMS CoA ${good}`) } });
+    expect(e!.payload).toMatchObject({ reportNo: good, source: { from: 'lims', shown: expect.stringContaining(`QLIMS CoA ${good}`) } });
     const l = (await loadBatch(t.sql, b.id))!;
     const pdf = JSON.stringify(batchRecordDoc(await recordInput(t.sql, l, t.master), 'QUINN', new Date(), false));
-    expect(pdf).toContain(`QC report ${good} (LIMS CoA ${good}`);
+    expect(pdf).toContain(`QC report ${good} (QLIMS CoA ${good}`);
   });
 
   it('TA-21 LIMS absent or down: the QC report number is typed, marked typed by hand', async () => {
@@ -192,12 +192,12 @@ describe('the QC report of a lot typed by hand, picked from LIMS', () => {
   it('TA-12 MMS not linked, LIMS answers: the lot\'s QC report is an approved CoA of this lot and material in LIMS', async () => {
     expect((await record(b.id, { lot: 'LOT-1', ...handLabels('lot', 'lot') })).statusCode).toBe(200);
     expect((await picks(b.id, '?key=0.1.0.1&lot=LOT-1')).coas.map((c) => c.coaNumber)).toEqual([good]);
-    expect(await problems(record(b.id, { 'lot.report': 'SUP-123' }))).toEqual(['SUP-123 is not an approved CoA of lot LOT-1 in LIMS: pick one.']);
+    expect(await problems(record(b.id, { 'lot.report': 'SUP-123' }))).toEqual(['SUP-123 is not an approved CoA of lot LOT-1 in QLIMS: pick one.']);
     expect(await problems(record(b.id, { 'lot.report': other }))).toEqual([`CoA ${other} is of X, not M.`]);
     expect((await record(b.id, { 'lot.report': good.toLowerCase() })).statusCode).toBe(200);
     const s = await stepOf(b.id, '0.1.0.1');
     expect(s.values['lot.report']).toBe(good);
-    expect(s.source['lot.report']).toMatchObject({ from: 'lims', shown: expect.stringContaining(`LIMS CoA ${good}: sample`) });
+    expect(s.source['lot.report']).toMatchObject({ from: 'lims', shown: expect.stringContaining(`QLIMS CoA ${good}: sample`) });
     expect(s.source.lot).toEqual({ from: 'hand', link: 'mms', state: 'absent' });
   });
 

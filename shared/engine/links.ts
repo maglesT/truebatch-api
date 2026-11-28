@@ -9,7 +9,7 @@ import type { BlockField } from '../blocks/format.js';
 export const PROVIDERS = ['deviations', 'qms', 'logbook', 'mms', 'recruitment', 'lims'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 export type LinkState = 'absent' | 'down' | 'ok';
-export const PROVIDER_NAME: Record<Provider, string> = { deviations: 'Deviations', qms: 'QMS', logbook: 'Logbook', mms: 'MMS', recruitment: 'Recruitment', lims: 'LIMS' };
+export const PROVIDER_NAME: Record<Provider, string> = { deviations: 'DIVE', qms: 'ASSURE', logbook: 'LEAD', mms: 'MMS', recruitment: 'TIDE', lims: 'QLIMS' };
 
 /**
  * Pulled through a link (with what was read, PL-07), or typed by hand while the link was absent or down. Tablets round
@@ -22,7 +22,7 @@ export type Source = { from: 'hand'; link: Provider; state: 'absent' | 'down' | 
 export const isHand = (s: Source | undefined): s is Extract<Source, { from: 'hand' }> => s?.from === 'hand';
 /** Why a value was typed by hand, in words: "LIMS link down", "LIMS not linked", "started before LIMS in-process requests". */
 export const handWhy = (s: Pick<Extract<Source, { from: 'hand' }>, 'link' | 'state'>, down = 'link down') =>
-  s.state === 'no_request' ? 'started before LIMS in-process requests' : `${PROVIDER_NAME[s.link]} ${s.state === 'down' ? down : 'not linked'}`;
+  s.state === 'no_request' ? 'started before QLIMS in-process requests' : `${PROVIDER_NAME[s.link]} ${s.state === 'down' ? down : 'not linked'}`;
 
 /** The link that gives a field kind's value. */
 export const LINK_OF: Partial<Record<BlockField['kind'], Provider>> = { lot: 'mms', machine: 'logbook', room: 'logbook' };

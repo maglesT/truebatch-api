@@ -135,7 +135,7 @@ describe('a deviation note without a number: closed here or sent to Deviations (
     ['send it without the permission', 'send-exception', people.operator, [], bare.id, 'You do not have the permission for this action.'],
     ['close it twice', 'close-exception', decider, [closedHere], bare.id, 'This note is already closed here.'],
     ['send it after it was closed here', 'send-exception', decider, [closedHere], bare.id, 'This note is already closed here.'],
-    ['close it after it was sent', 'close-exception', decider, [sent], bare.id, 'This note is already sent to Deviations.'],
+    ['close it after it was sent', 'close-exception', decider, [sent], bare.id, 'This note is already sent to DIVE.'],
     ['decide a note with a deviation number', 'close-exception', decider, [], deviation.id, 'There is no deviation note without a number with this number.'],
     ['decide after release', 'send-exception', decider, [be('released')], bare.id, 'The batch is released.'],
   ])('TA-21 %s', (_what, action, who, batch, note, want) => {
@@ -144,9 +144,9 @@ describe('a deviation note without a number: closed here or sent to Deviations (
 
   it('TA-21 release and rejection wait for the decision, and for Deviations to file a note sent there', () => {
     const where = 'Stage 0 › Check a value against limits: pH';
-    expect(batchRefusal('release', view([...complete, bare], approved), both)?.problems).toEqual([`Deviation note “Granules spilled at discharge” (${where}) waits for a decision: close it here or send it to Deviations`]);
+    expect(batchRefusal('release', view([...complete, bare], approved), both)?.problems).toEqual([`Deviation note “Granules spilled at discharge” (${where}) waits for a decision: close it here or send it to DIVE`]);
     expect(batchRefusal('reject', view([...complete, bare], approved), both)?.problems).toHaveLength(1);
-    expect(batchRefusal('release', view([...complete, bare], [...approved, sent]), both)?.problems).toEqual([`Deviation note “Granules spilled at discharge” (${where}) was sent to Deviations and is not filed there yet`]);
+    expect(batchRefusal('release', view([...complete, bare], [...approved, sent]), both)?.problems).toEqual([`Deviation note “Granules spilled at discharge” (${where}) was sent to DIVE and is not filed there yet`]);
     expect(batchRefusal('release', view([...complete, bare], [...approved, closedHere]), both)).toBeNull();
     // Filed by Deviations from the sent note: it is that deviation now, closed there first.
     const filed = new Map([[`note:${bare.id}`, { status: 'investigation', closedAt: null, number: 'DEV-26-0100' }]]);

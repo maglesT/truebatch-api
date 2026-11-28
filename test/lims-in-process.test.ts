@@ -41,7 +41,7 @@ describe('the in-process rules (shared/engine/lims.ts)', () => {
     expect(coaRefusal(coa(), want(3))).toBeNull();
     expect(coaRefusal(coa({ requestId: 'TA260001/2.1.3.4' }), want(3))).toBe('In-process report IPR26001 is for request TA260001/2.1.3.4, not request TA260001/2.1.3.3 (this step) or an earlier round of it.');
     expect(coaRefusal(coa({ purpose: 'release', coaNumber: 'COA26001' }), want(1))).toBe('CoA COA26001 is of a release sample: only an in-process report of request TA260001/2.1.3.1 (this step) may be used.');
-    expect(coaRefusal(coa({ decision: 'REJECTED', coaNumber: null }), want(1))).toMatch(/not approved in LIMS/);
+    expect(coaRefusal(coa({ decision: 'REJECTED', coaNumber: null }), want(1))).toMatch(/not approved in QLIMS/);
     expect(coaRefusal(coa({ lotNumber: 'TA260002' }), want(1))).toBe('CoA IPR26001 is for batch TA260002, not batch TA260001.');
     // An in-process report is never a batch's release CoA.
     expect(coaRefusal(coa(), { kind: 'BATCH', batchNo: 'TA260001', itemId: 'p', code: 'P' })).toBe('CoA IPR26001 is of an in-process sample: only the release CoA of batch TA260001 may be used.');
@@ -52,7 +52,7 @@ describe('the in-process rules (shared/engine/lims.ts)', () => {
     expect(inProcessFit(result({ unit: 'ppm' }), field, '%')).toEqual({ error: 'Water by KF of in-process report IPR26001 is in ppm, not in %.' });
     expect(inProcessFit(result({ individual: ['1', '2'] }), field, '%')).toEqual({ error: 'Water by KF of in-process report IPR26001 is a list of 2 values: Result takes one result.' });
     expect(inProcessFit(result({ figure: 'mean' }), field, '%')).toEqual({ error: 'Water by KF of in-process report IPR26001 reports the mean, not one result: it is not Result.' });
-    expect(inProcessFit(result({ reported: null }), field, '%')).toEqual({ error: 'Water by KF of in-process report IPR26001 has no reported figure in LIMS.' });
+    expect(inProcessFit(result({ reported: null }), field, '%')).toEqual({ error: 'Water by KF of in-process report IPR26001 has no reported figure in QLIMS.' });
     expect(sameUnit(null, 'pH')).toBe(true);
     expect(sameUnit('mL', 'ml')).toBe(true);
     expect(sameUnit('mg', '%')).toBe(false);
@@ -60,7 +60,7 @@ describe('the in-process rules (shared/engine/lims.ts)', () => {
 
   it('the record says which round\'s sample was used and when its request opened', () => {
     expect(inProcessText(result(), 'TA260001/2.1.3.1', { round: 1, at: '2026-11-19T05:10:00.000Z' }))
-      .toBe('LIMS in-process report IPR26001: Water by KF (request TA260001/2.1.3.1, sampled in round 1 at 2026-11-19T05:10:00.000Z), 0.42 % as reported (limit NMT 0.5), analysis LA26001');
+      .toBe('QLIMS in-process report IPR26001: Water by KF (request TA260001/2.1.3.1, sampled in round 1 at 2026-11-19T05:10:00.000Z), 0.42 % as reported (limit NMT 0.5), analysis LA26001');
     expect(inProcessText(result(), 'TA260001/2.1.3.1', { at: '2026-11-19T05:10:00.000Z' })).toContain('(request TA260001/2.1.3.1, requested 2026-11-19T05:10:00.000Z)');
   });
 
@@ -68,7 +68,7 @@ describe('the in-process rules (shared/engine/lims.ts)', () => {
     const b = findBlock({ id: 'lab-test', version: 1 })!;
     expect(blockProblems(b)).toEqual([]);
     const bad: Block = { ...b, fields: [{ ...b.fields[0]!, count: 3 }] };
-    expect(blockProblems(bad)).toEqual(['field result: only a single number is an in-process result from LIMS']);
+    expect(blockProblems(bad)).toEqual(['field result: only a single number is an in-process result from QLIMS']);
     expect(findBlock({ id: 'react', version: 1 })!.fields.filter((f) => f.qc).map((f) => f.name)).toEqual(['ipcResult']);
     expect(findBlock({ id: 'check', version: 1 })!.fields.filter((f) => f.qc)).toEqual([]);
   });
@@ -178,7 +178,7 @@ describe('a QC lab in-process test picked from LIMS', () => {
   });
 
   it('TA-14 while LIMS answers the result is picked (its reported figure, kept with the report and request); typing is refused', async () => {
-    expect(await problems(record(b.id, '0.1.0.1', { result: '0.40' }))).toEqual([`Result comes from LIMS: pick the result of in-process request ${b.batchNo}/0.1.0.1 once QC has approved it there.`]);
+    expect(await problems(record(b.id, '0.1.0.1', { result: '0.40' }))).toEqual([`Result comes from QLIMS: pick the result of in-process request ${b.batchNo}/0.1.0.1 once QC has approved it there.`]);
     const wrong = await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.30', 'ppm');
     const release = await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.30', '%', { purpose: 'release' });
     const good = await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.42');
@@ -189,7 +189,7 @@ describe('a QC lab in-process test picked from LIMS', () => {
     const s = await stepOf(b.id, '0.1.0.1');
     expect(s.values.result).toEqual({ value: '0.42', unit: '%' });
     expect(s.source.result).toMatchObject({ from: 'lims', request: `${b.batchNo}/0.1.0.1`, ref: r!.resultId,
-      shown: expect.stringMatching(new RegExp(`^LIMS in-process report ${good}: Water by KF \\(request ${b.batchNo}/0\\.1\\.0\\.1, requested .+\\), 0\\.42 % as reported`)) });
+      shown: expect.stringMatching(new RegExp(`^QLIMS in-process report ${good}: Water by KF \\(request ${b.batchNo}/0\\.1\\.0\\.1, requested .+\\), 0\\.42 % as reported`)) });
     expect(await requests(b.batchNo)).toMatchObject([{ status: 'done' }]);
   });
 
@@ -198,7 +198,7 @@ describe('a QC lab in-process test picked from LIMS', () => {
     await act(c.id, '0.1.0.1', 'start');
     await cut();
     try {
-      expect(await problems(record(c.id, '0.1.0.1', { result: { lims: 'x' } }))).toEqual(['LIMS does not answer now: type Result from the QC report.']);
+      expect(await problems(record(c.id, '0.1.0.1', { result: { lims: 'x' } }))).toEqual(['QLIMS does not answer now: type Result from the QC report.']);
       expect((await record(c.id, '0.1.0.1', { result: '0.41' })).statusCode).toBe(200);
     } finally { await restore(); }
     expect((await stepOf(c.id, '0.1.0.1')).source.result).toEqual({ from: 'hand', link: 'lims', state: 'down' });
@@ -257,11 +257,11 @@ describe('round 43: a step with rounds takes an earlier round\'s sample; each re
 
 describe('Tablets round 43: a step started before LIMS in-process requests is typed by hand, not stuck', () => {
   it('in words: "started before LIMS in-process requests"; a link down or absent as before', () => {
-    expect(handWhy({ link: 'lims', state: 'no_request' })).toBe('started before LIMS in-process requests');
-    expect(handWhy({ link: 'lims', state: 'down' })).toBe('LIMS link down');
-    expect(handWhy({ link: 'lims', state: 'down' }, 'link was down')).toBe('LIMS link was down');
+    expect(handWhy({ link: 'lims', state: 'no_request' })).toBe('started before QLIMS in-process requests');
+    expect(handWhy({ link: 'lims', state: 'down' })).toBe('QLIMS link down');
+    expect(handWhy({ link: 'lims', state: 'down' }, 'link was down')).toBe('QLIMS link was down');
     expect(handWhy({ link: 'mms', state: 'absent' })).toBe('MMS not linked');
-    expect(qcReportText({ reportNo: 'QC-1', source: { from: 'hand', link: 'lims', state: 'absent' } })).toBe('QC report QC-1 (typed by hand: LIMS not linked)');
+    expect(qcReportText({ reportNo: 'QC-1', source: { from: 'hand', link: 'lims', state: 'absent' } })).toBe('QC report QC-1 (typed by hand: QLIMS not linked)');
   });
 
   it('TA-14 while LIMS answers: no pick is offered or taken; the result is typed, marked, checked by a second person and listed for QA', async () => {
@@ -273,7 +273,7 @@ describe('Tablets round 43: a step started before LIMS in-process requests is ty
     await reported(b.batchNo, `${b.batchNo}/0.1.0.1`, '0.42');
     const p = await as('asha', 'GET', `/api/batches/${b.id}/lims?request=0.1.0.1&units=${encodeURIComponent(encodeURIComponent('%'))}`);
     expect(p.json()).toEqual({ link: 'ok', request: `${b.batchNo}/0.1.0.1`, noRequest: true, coas: [], results: [] });
-    expect(await problems(record(b.id, '0.1.0.1', { result: { lims: 'x' } }))).toEqual(['Result: this step was started before LIMS in-process requests: type it from the QC report.']);
+    expect(await problems(record(b.id, '0.1.0.1', { result: { lims: 'x' } }))).toEqual(['Result: this step was started before QLIMS in-process requests: type it from the QC report.']);
     expect((await record(b.id, '0.1.0.1', { result: '0.42' })).statusCode).toBe(200);
     expect((await stepOf(b.id, '0.1.0.1')).source.result).toEqual({ from: 'hand', link: 'lims', state: 'no_request' });
     const review = (await as('asha', 'GET', `/api/batches/${b.id}/review`)).json() as { hand: { field: string; link: string; state: string }[] };
@@ -282,7 +282,7 @@ describe('Tablets round 43: a step started before LIMS in-process requests is ty
     expect((await done(b.id, '0.1.0.1')).statusCode).toBe(200);
     expect(((await as('asha', 'GET', `/api/batches/${b.id}`)).json() as { steps: { id: string; state: string }[] }).steps.find((s) => s.id === '0.1.0.1')!.state).toBe('done_awaiting_check');
     const l = (await loadBatch(t.sql, b.id))!;
-    expect(JSON.stringify(batchRecordDoc(await recordInput(t.sql, l, t.master), 'ASHA', new Date(), false))).toContain('BY HAND: started before LIMS in-process requests');
+    expect(JSON.stringify(batchRecordDoc(await recordInput(t.sql, l, t.master), 'ASHA', new Date(), false))).toContain('BY HAND: started before QLIMS in-process requests');
   });
 });
 
@@ -327,8 +327,8 @@ describe('Tablets round 45: in-process test codes unique within the product (lab
   it('the master check says a repeated in-process block must be mapped in LIMS for each occurrence (info, never blocking)', () => {
     const d = api();
     expect(masterChecks(d).filter((p) => p.level === 'info').map((p) => [p.path, p.message])).toEqual([
-      ['stages[1].steps[3]', "Process to an end point is in this master 2 times: this step's in-process test is react.ipcResult@1. LIMS specification must map each occurrence"],
-      ['stages[2].steps[0]', "Process to an end point is in this master 2 times: this step's in-process test is react.ipcResult@2. LIMS specification must map each occurrence"],
+      ['stages[1].steps[3]', "Process to an end point is in this master 2 times: this step's in-process test is react.ipcResult@1. QLIMS specification must map each occurrence"],
+      ['stages[2].steps[0]', "Process to an end point is in this master 2 times: this step's in-process test is react.ipcResult@2. QLIMS specification must map each occurrence"],
     ]);
     // A reaction without an IPC unit (TLC or visual end point) opens no request: nothing to map.
     delete d.stages[2]!.steps[0]!.settings.ipcUnit;

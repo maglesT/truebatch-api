@@ -7,7 +7,7 @@ import type { Block } from './format.js';
 // limits (C1). A check measured on the floor (pH, a reading) is the "check" block.
 export const labTest: Block = {
   id: 'lab-test', version: 1, name: 'QC lab in-process test', checker: false,
-  instruction: 'Take the sample, label it and send it to QC. Pick the result from LIMS once QC has approved it.',
+  instruction: 'Take the sample, label it and send it to QC. Pick the result from QLIMS once QC has approved it.',
   fields: [{ name: 'result', label: 'Result', kind: 'number', unit: '$unit', qc: 'in_process' }],
   settings: [
     { name: 'what', label: 'What is tested', kind: 'text' },

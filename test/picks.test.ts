@@ -71,7 +71,7 @@ describe('machine pickers on the demo master-data types', () => {
     const reactor = field('react', 'machine');
     const all = [{ code: 'RCT-01', type: 'Glass lined reactor', room: 'RM-103' }, { code: 'BAL-X', type: null, room: null }, { code: 'CF-01', type: 'Centrifuge', room: 'RM-105' }];
     expect(emptyNote(stage, reactor, all, ROOMS)).toBe('No reactor or vessel can be used here: RCT-01 stands in RM-103, not in a room this stage allows (RM-105). '
-      + '1 machine has no type in master data, so it is not offered. Engineering moves one into a room this stage allows, or adds one, in master data (the Logbook shows where each stands).');
+      + '1 machine has no type in master data, so it is not offered. Engineering moves one into a room this stage allows, or adds one, in master data (LEAD shows where each stands).');
     expect(emptyNote(stage, reactor, all.slice(1), ROOMS)).toBe('Master data has no active reactor or vessel. 1 machine has no type in master data, so it is not offered. Engineering adds it in master data.');
   });
 });

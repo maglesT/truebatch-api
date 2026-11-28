@@ -112,7 +112,7 @@ export function blockProblems(b: Block): string[] {
     if (f.kind === 'number' && !f.unit) p.push(`field ${f.name}: a number needs a unit`);
     if (f.unit?.startsWith('$') ? !settings.has(f.unit.slice(1)) : f.unit !== undefined && !findUnit(f.unit)) p.push(`field ${f.name}: unknown unit ${f.unit}`);
     if (f.kind === 'choice' && !f.options?.length) p.push(`field ${f.name}: a choice needs options`);
-    if (f.qc && (f.kind !== 'number' || f.count !== undefined)) p.push(`field ${f.name}: only a single number is an in-process result from LIMS`);
+    if (f.qc && (f.kind !== 'number' || f.count !== undefined)) p.push(`field ${f.name}: only a single number is an in-process result from QLIMS`);
   }
   for (const s of b.settings) if (s.options && (s.kind !== 'text' || !s.options.length)) p.push(`setting ${s.name}: only a text setting has a list`);
   for (const s of b.settings) if (s.notBatch && s.kind !== 'quantity') p.push(`setting ${s.name}: only a quantity setting is marked not a batch quantity`);
