@@ -25,7 +25,7 @@ export const chargeLiquid: Block = {
     { name: 'temperatureLimit', label: 'Temperature limits during the addition', kind: 'limit', optional: true },
   ],
   calcs: [
-    { name: 'chargedCheck', label: 'Quantity charged against target', template: 'C1', args: { value: '$charged', around: { centre: '$target', name: 'target', plusMinusPercent: '$tolerance' } } },
+    { name: 'chargedCheck', label: 'Quantity charged against target', template: 'C1', args: { value: '$charged', around: { centre: '$target', name: 'target', centreDecimals: 'unit', plusMinusPercent: '$tolerance' } } },
     { name: 'additionTime', label: 'Addition time', template: 'T13', args: { mode: 'duration', start: '$additionStart', end: '$additionEnd', limit: '$additionTimeLimit' } },
     { name: 'temperatureCheck', label: 'Temperature during the addition', template: 'C1', args: { value: '$maxTemperature?', limit: '$temperatureLimit?' } },
   ],
